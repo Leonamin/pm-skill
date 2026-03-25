@@ -36,6 +36,7 @@ import {
   createTemplatedPage,
   createDatabaseEntry,
   validateNotionKey,
+  searchPages,
 } from "./notion.js";
 
 // ── CommandContext ──
@@ -122,11 +123,32 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
     }
   }
 
-  // 3. Validate Notion key (optional)
+  // 3. Validate Notion key + auto-detect root page
+  let selectedNotionPage = notionPage;
   if (notionKey) {
     console.log("\n[Notion] Validating API key...");
     const notionUser = await validateNotionKey(notionKey);
     console.log(`  Authenticated as: ${notionUser.name}`);
+
+    if (!selectedNotionPage) {
+      console.log("  Searching for accessible pages...");
+      const notionClient = getNotionClient(notionKey);
+      const pages = await searchPages(notionClient, "");
+      if (pages.length === 0) {
+        console.log("  ⚠️  No pages shared with this integration.");
+        console.log("  Share a page in Notion: page menu → Connections → add your integration");
+      } else if (pages.length === 1) {
+        selectedNotionPage = pages[0].id;
+        console.log(`  Auto-selected root page: "${pages[0].title}" (${pages[0].id})`);
+      } else {
+        console.log(`\n  Accessible pages (${pages.length}):`);
+        for (const page of pages) {
+          console.log(`    ${page.title} | ${page.id}`);
+        }
+        selectedNotionPage = pages[0].id;
+        console.log(`  Using first page: "${pages[0].title}". Override with --notion-page <id>`);
+      }
+    }
   }
 
   // 4. Write .env
@@ -137,7 +159,7 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
   };
   if (projectId) envEntries.LINEAR_DEFAULT_PROJECT_ID = projectId;
   if (notionKey) envEntries.NOTION_API_KEY = notionKey;
-  if (notionPage) envEntries.NOTION_ROOT_PAGE_ID = notionPage;
+  if (selectedNotionPage) envEntries.NOTION_ROOT_PAGE_ID = selectedNotionPage;
 
   const envPath = writeEnvFile(cwd, envEntries);
   console.log(`  Written: ${envPath}`);
