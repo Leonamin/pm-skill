@@ -324,33 +324,24 @@ async function startFeature(
     ? resolvePriority(ctx.config, tmpl.linear_priority)
     : undefined;
 
+  const description = [
+    `## Tasks`,
+    `- [ ] Implementation`,
+    `- [ ] Write/update documentation (\`push-doc\`)`,
+    `- [ ] Tests`,
+    `- [ ] Review`,
+  ].join("\n");
+
   const issue = await createIssue(ctx.linear, {
     teamId: ctx.env.LINEAR_DEFAULT_TEAM_ID,
     title,
+    description,
     priority,
     labelIds,
     projectId: ctx.env.LINEAR_DEFAULT_PROJECT_ID,
   });
-  console.log(`[Linear] Issue created: ${issue.identifier} — ${issue.url}`);
 
-  if (!ctx.notion || !ctx.env.NOTION_ROOT_PAGE_ID) {
-    console.log("[Notion] Not configured — skipping page creation");
-    return;
-  }
-
-  const page = await createTemplatedPage(
-    ctx.notion,
-    ctx.env.NOTION_ROOT_PAGE_ID,
-    tmpl.notion_template,
-    title,
-    issue.url
-  );
-  console.log(`[Notion] Page created: ${page.url}`);
-
-  await createAttachment(ctx.linear, issue.id, page.url, `${title} — PRD`);
-  console.log(`[Link] Linear ↔ Notion linked`);
-  console.log(`\n✅ Feature started: ${issue.identifier} | Notion: ${page.url}`);
-  console.log(`   Notion Page ID: ${page.id} (use with --parent for sub-docs)`);
+  console.log(`✅ Feature started: ${issue.identifier} — ${issue.url}`);
 }
 
 async function reportBug(
@@ -556,16 +547,16 @@ async function pushDoc(
   ctx: CommandContext,
   args: minimist.ParsedArgs
 ): Promise<void> {
-  const identifier = args._[0];
-  const filePath = args._[1] as string | undefined;
+  const filePath = args._[0] as string | undefined;
   const content = args.content as string | undefined;
   const title = args.title as string | undefined;
   const parentPageId = args.parent as string | undefined;
+  const issueId = args.issue as string | undefined;
 
-  if (!identifier || (!filePath && !content)) {
+  if (!filePath && !content) {
     throw new Error(
-      "Usage: npx pm-skill push-doc <issue> <file.md> [--title T] [--parent P]\n" +
-        "       npx pm-skill push-doc <issue> --title T --content \"# md\" [--parent P]"
+      "Usage: npx pm-skill push-doc <file.md> [--title T] [--parent P] [--issue I]\n" +
+        "       npx pm-skill push-doc --title T --content \"# md\" [--parent P] [--issue I]"
     );
   }
 
@@ -580,22 +571,21 @@ async function pushDoc(
 
   // Read markdown
   let markdown: string;
-  if (filePath) {
-    if (!existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
+  if (filePath && !existsSync(filePath) && !content) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+  if (filePath && existsSync(filePath)) {
     markdown = readFileSync(filePath, "utf-8");
+  } else if (content) {
+    markdown = content;
   } else {
-    markdown = content!;
+    throw new Error("Provide a file path or --content.");
   }
 
   // Determine title
   const docTitle = title ?? (filePath ? filePath.replace(/^.*[\\/]/, "").replace(/\.md$/, "") : "Untitled");
 
-  // Get Linear issue for linking
-  const issue = await getIssue(ctx.linear, identifier);
-
-  // Create Notion page under specified parent
+  // Create Notion page
   const page = await createPageFromMarkdown(
     ctx.notion,
     targetParent,
@@ -605,10 +595,14 @@ async function pushDoc(
   console.log(`[Notion] Page created: "${docTitle}" — ${page.url}`);
   console.log(`[Notion] Page ID: ${page.id}`);
 
-  // Link to Linear issue
-  await createAttachment(ctx.linear, issue.id, page.url, docTitle, "source-of-truth");
-  console.log(`[Link] Attached to ${issue.identifier}`);
-  console.log(`\n✅ Document pushed: ${issue.identifier} | ${page.url}`);
+  // Optionally link to Linear issue
+  if (issueId) {
+    const issue = await getIssue(ctx.linear, issueId);
+    await createAttachment(ctx.linear, issue.id, page.url, docTitle, "source-of-truth");
+    console.log(`[Link] Attached to ${issue.identifier}`);
+  }
+
+  console.log(`\n✅ Document pushed: ${page.url}`);
 }
 
 async function updateDoc(
@@ -828,7 +822,7 @@ const COMMANDS: Record<string, CommandFn> = {
 
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
-    string: ["severity", "type", "url", "title", "content", "parent", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
+    string: ["severity", "type", "url", "title", "content", "parent", "issue", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
     boolean: ["sync", "version"],
     alias: { s: "severity", t: "type" },
   });
@@ -854,7 +848,7 @@ Commands:
   setup [--sync]                     Verify config & label matching (--sync creates missing labels)
   select-project [name-or-id]        List or switch Linear project
   select-page [name-or-id]           List or switch Notion root page
-  start-feature <title>              Start feature (Linear issue + Notion PRD)
+  start-feature <title>              Start feature (Linear issue with task checklist)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
   add-task <parent> <title>          Add sub-task to an issue
   relate <issue1> <issue2> [--type T]  Link issues (type: related/similar)
@@ -862,9 +856,9 @@ Commands:
   attach-doc <issue> --url U --title T --type Y
                                      Attach document (type: source-of-truth/issue-tracking/domain-knowledge)
   get <issue>                        Show issue details
-  push-doc <issue> <file.md> [--title T] [--parent P]
-                                     Upload markdown to Notion + link to issue
-  push-doc <issue> --title T --content "# md" [--parent P]
+  push-doc <file.md> [--title T] [--parent P] [--issue I]
+                                     Upload markdown to Notion (optionally link to issue)
+  push-doc --title T --content "# md" [--parent P] [--issue I]
                                      Push content directly (for AI agents)
   update-doc <page-id> <file.md>     Replace Notion page content with markdown
   update-doc <page-id> --content "# md"
