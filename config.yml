@@ -30,32 +30,27 @@ labels:
 
 templates:
   - id: feature
-    name: Feature PRD
-    description: "기능 개발용 PRD 템플릿"
-    notion_template: feature-prd
+    name: Feature
+    description: "기능 개발 템플릿"
     linear_labels: [dev]
     linear_priority: p2
   - id: bugfix
-    name: Bug Report
-    description: "버그 리포트 템플릿"
-    notion_template: bug-report
+    name: Bug Fix
+    description: "버그 수정 템플릿"
     linear_labels: [bug]
   - id: improvement
     name: Improvement
     description: "기존 기능 개선 템플릿"
-    notion_template: improvement
     linear_labels: [dev]
     linear_priority: p2
   - id: refactor
     name: Refactor
     description: "리팩토링 템플릿"
-    notion_template: refactor
     linear_labels: [refactor]
     linear_priority: p3
   - id: design
-    name: Design Doc
+    name: Design
     description: "설계 문서 템플릿"
-    notion_template: design-doc
     linear_labels: [design, plan]
     linear_priority: p2
 

@@ -32,8 +32,6 @@ export interface ValidatedEnv {
 
 const REQUIRED_KEYS = ["LINEAR_API_KEY", "LINEAR_DEFAULT_TEAM_ID"] as const;
 
-const NOTION_KEYS = ["NOTION_API_KEY", "NOTION_ROOT_PAGE_ID"] as const;
-
 const KEY_HELP: Record<string, string> = {
   LINEAR_API_KEY:
     "Linear > Settings > API > Personal API Keys",
@@ -85,12 +83,7 @@ export function validateEnv(command: string): ValidatedEnv {
     }
   }
 
-  const notionCommands = ["start-feature", "report-bug"];
-  if (notionCommands.includes(command)) {
-    for (const key of NOTION_KEYS) {
-      if (!process.env[key]) missing.push(key);
-    }
-  }
+
 
   if (missing.length > 0) {
     const hints = missing

@@ -35,8 +35,6 @@ import {
 } from "./linear.js";
 import {
   getNotionClient,
-  createTemplatedPage,
-  createDatabaseEntry,
   validateNotionKey,
   searchPages,
   createPageFromMarkdown,
@@ -366,47 +364,27 @@ async function reportBug(
   );
   const labelIds = resolveLabels(configLabels, teamLabels);
 
+  const description = [
+    `**Severity: ${severity}**`,
+    ``,
+    `## Tasks`,
+    `- [ ] Reproduce`,
+    `- [ ] Root cause analysis`,
+    `- [ ] Fix & write tests`,
+    `- [ ] Write/update documentation (\`push-doc\`)`,
+    `- [ ] Review`,
+  ].join("\n");
+
   const issue = await createIssue(ctx.linear, {
     teamId: ctx.env.LINEAR_DEFAULT_TEAM_ID,
     title,
+    description,
     priority,
     labelIds,
     projectId: ctx.env.LINEAR_DEFAULT_PROJECT_ID,
   });
-  console.log(`[Linear] Bug created: ${issue.identifier} (severity: ${severity}) — ${issue.url}`);
 
-  if (!ctx.notion) {
-    console.log("[Notion] Not configured — skipping");
-    return;
-  }
-
-  let notionUrl: string;
-
-  if (ctx.env.NOTION_BUG_DB_ID) {
-    const entry = await createDatabaseEntry(ctx.notion, ctx.env.NOTION_BUG_DB_ID, {
-      Name: { title: [{ text: { content: title } }] },
-    });
-    notionUrl = entry.url;
-    console.log(`[Notion] Bug DB entry: ${notionUrl}`);
-  } else if (ctx.env.NOTION_ROOT_PAGE_ID) {
-    const page = await createTemplatedPage(
-      ctx.notion,
-      ctx.env.NOTION_ROOT_PAGE_ID,
-      tmpl.notion_template,
-      title,
-      issue.url,
-      severity
-    );
-    notionUrl = page.url;
-    console.log(`[Notion] Bug report page: ${notionUrl}`);
-  } else {
-    console.log("[Notion] NOTION_ROOT_PAGE_ID not set — skipping");
-    return;
-  }
-
-  await createAttachment(ctx.linear, issue.id, notionUrl, `${title} — Bug Report`);
-  console.log(`[Link] Linear ↔ Notion linked`);
-  console.log(`\n✅ Bug reported: ${issue.identifier} | Notion: ${notionUrl}`);
+  console.log(`✅ Bug reported: ${issue.identifier} (severity: ${severity}) — ${issue.url}`);
 }
 
 async function addTask(
@@ -680,12 +658,50 @@ async function del(
   args: minimist.ParsedArgs
 ): Promise<void> {
   const identifiers = args._ as string[];
+  const recursive = !!args.recursive;
+
   if (identifiers.length === 0) {
-    throw new Error("Usage: npx pm-skill delete <issue> [issue2 ...]");
+    throw new Error("Usage: npx pm-skill delete <issue> [issue2 ...] [--recursive]");
   }
 
   for (const identifier of identifiers) {
     const detail = await getIssueDetail(ctx.linear, identifier);
+
+    // Check for children
+    if (detail.children.length > 0 && !recursive) {
+      console.log(`⚠️  ${detail.issue.identifier} has ${detail.children.length} sub-issue(s):`);
+      for (const child of detail.children) {
+        console.log(`    ${child.identifier}: ${child.title}`);
+      }
+      throw new Error(
+        `Use --recursive to delete ${detail.issue.identifier} and its sub-issues.`
+      );
+    }
+
+    // Recursively delete children first
+    if (detail.children.length > 0 && recursive) {
+      for (const child of detail.children) {
+        const childDetail = await getIssueDetail(ctx.linear, child.identifier);
+
+        // Delete child's Notion pages
+        if (ctx.notion) {
+          for (const att of childDetail.attachments) {
+            if (att.url.includes("notion.so")) {
+              const pageId = extractNotionPageId(att.url);
+              if (pageId) {
+                try {
+                  await deletePage(ctx.notion, pageId);
+                  console.log(`  [Notion] Deleted: ${att.title}`);
+                } catch { /* skip */ }
+              }
+            }
+          }
+        }
+
+        await deleteIssue(ctx.linear, child.id);
+        console.log(`  Deleted sub-issue: ${child.identifier}`);
+      }
+    }
 
     // Delete linked Notion pages
     if (ctx.notion && detail.attachments.length > 0) {
@@ -697,7 +713,7 @@ async function del(
               await deletePage(ctx.notion, pageId);
               console.log(`  [Notion] Deleted: ${att.title}`);
             } catch {
-              console.log(`  [Notion] Could not delete: ${att.url} (may already be deleted or no access)`);
+              console.log(`  [Notion] Could not delete: ${att.url}`);
             }
           }
         }
@@ -823,7 +839,7 @@ const COMMANDS: Record<string, CommandFn> = {
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
     string: ["severity", "type", "url", "title", "content", "parent", "issue", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
-    boolean: ["sync", "version"],
+    boolean: ["sync", "version", "recursive"],
     alias: { s: "severity", t: "type" },
   });
 
@@ -864,7 +880,8 @@ Commands:
   update-doc <page-id> --content "# md"
                                      Replace content directly
   create-folder <name> [--parent P]  Create Notion folder (returns page ID for --parent)
-  delete <issue> [issue2 ...]        Delete issue(s) + linked Notion pages
+  delete <issue> [issue2 ...] [--recursive]
+                                     Delete issue(s) + linked Notion pages (--recursive for sub-issues)
   help                               Show this help
   --version                          Show version
 

@@ -16,7 +16,6 @@ export interface PmTemplate {
   id: string;
   name: string;
   description: string;
-  notion_template: string;
   linear_labels: string[];
   linear_priority?: string;
 }
@@ -80,9 +79,9 @@ function validateTemplates(
     throw new ConfigValidationError("templates array is empty or missing.");
   }
   for (const tmpl of templates) {
-    if (!tmpl.id || !tmpl.name || !tmpl.description || !tmpl.notion_template) {
+    if (!tmpl.id || !tmpl.name || !tmpl.description) {
       throw new ConfigValidationError(
-        `Template '${tmpl.id ?? "(unknown)"}' is missing required fields (id, name, description, notion_template).`
+        `Template '${tmpl.id ?? "(unknown)"}' is missing required fields (id, name, description).`
       );
     }
     if (Array.isArray(tmpl.linear_labels)) {
