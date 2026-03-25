@@ -261,7 +261,7 @@ async function startFeature(
 ): Promise<void> {
   const title = args._[0];
   if (!title) {
-    throw new Error("Usage: pm-skill start-feature <title>");
+    throw new Error("Usage: npx pm-skill start-feature <title>");
   }
 
   const tmpl = getTemplate(ctx.config, "feature");
@@ -311,7 +311,7 @@ async function reportBug(
 ): Promise<void> {
   const title = args._[0];
   if (!title) {
-    throw new Error("Usage: pm-skill report-bug <title> [--severity high]");
+    throw new Error("Usage: npx pm-skill report-bug <title> [--severity high]");
   }
 
   const severity = (args.severity as string) ?? "medium";
@@ -377,7 +377,7 @@ async function addTask(
   const parentIdentifier = args._[0];
   const title = args._[1];
   if (!parentIdentifier || !title) {
-    throw new Error("Usage: pm-skill add-task <parent-issue> <title>");
+    throw new Error("Usage: npx pm-skill add-task <parent-issue> <title>");
   }
 
   const parent = await getIssue(ctx.linear, parentIdentifier);
@@ -398,7 +398,7 @@ async function relate(
   const id1 = args._[0];
   const id2 = args._[1];
   if (!id1 || !id2) {
-    throw new Error("Usage: pm-skill relate <issue1> <issue2> [--type related]");
+    throw new Error("Usage: npx pm-skill relate <issue1> <issue2> [--type related]");
   }
 
   const type = (args.type as string) ?? "related";
@@ -422,7 +422,7 @@ async function block(
   const id1 = args._[0];
   const id2 = args._[1];
   if (!id1 || !id2) {
-    throw new Error("Usage: pm-skill block <blocker> <blocked>");
+    throw new Error("Usage: npx pm-skill block <blocker> <blocked>");
   }
 
   const issue1 = await getIssue(ctx.linear, id1);
@@ -443,7 +443,7 @@ async function attachDoc(
 
   if (!identifier || !url || !title || !type) {
     throw new Error(
-      'Usage: pm-skill attach-doc <issue> --url "URL" --title "Title" --type <type>'
+      'Usage: npx pm-skill attach-doc <issue> --url "URL" --title "Title" --type <type>'
     );
   }
 
@@ -460,7 +460,7 @@ async function get(
 ): Promise<void> {
   const identifier = args._[0];
   if (!identifier) {
-    throw new Error("Usage: pm-skill get <issue>");
+    throw new Error("Usage: npx pm-skill get <issue>");
   }
 
   const detail = await getIssueDetail(ctx.linear, identifier);
