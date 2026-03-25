@@ -39,6 +39,8 @@ import {
   createDatabaseEntry,
   validateNotionKey,
   searchPages,
+  createPageFromMarkdown,
+  updatePageContent,
 } from "./notion.js";
 
 // ── CommandContext ──
@@ -547,6 +549,91 @@ async function get(
   }
 }
 
+async function pushDoc(
+  ctx: CommandContext,
+  args: minimist.ParsedArgs
+): Promise<void> {
+  const identifier = args._[0];
+  const filePath = args._[1] as string | undefined;
+  const content = args.content as string | undefined;
+  const title = args.title as string | undefined;
+
+  if (!identifier || (!filePath && !content)) {
+    throw new Error(
+      "Usage: npx pm-skill push-doc <issue> <file.md> [--title T]\n" +
+        "       npx pm-skill push-doc <issue> --title T --content \"# Markdown...\""
+    );
+  }
+
+  if (!ctx.notion || !ctx.env.NOTION_ROOT_PAGE_ID) {
+    throw new Error("Notion is not configured. Run 'npx pm-skill init' with --notion-key.");
+  }
+
+  // Read markdown
+  let markdown: string;
+  if (filePath) {
+    if (!existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    markdown = readFileSync(filePath, "utf-8");
+  } else {
+    markdown = content!;
+  }
+
+  // Determine title
+  const docTitle = title ?? (filePath ? filePath.replace(/^.*[\\/]/, "").replace(/\.md$/, "") : "Untitled");
+
+  // Get Linear issue for linking
+  const issue = await getIssue(ctx.linear, identifier);
+
+  // Create Notion page
+  const page = await createPageFromMarkdown(
+    ctx.notion,
+    ctx.env.NOTION_ROOT_PAGE_ID,
+    docTitle,
+    markdown
+  );
+  console.log(`[Notion] Page created: "${docTitle}" — ${page.url}`);
+
+  // Link to Linear issue
+  await createAttachment(ctx.linear, issue.id, page.url, docTitle, "source-of-truth");
+  console.log(`[Link] Attached to ${issue.identifier}`);
+  console.log(`\n✅ Document pushed: ${issue.identifier} | ${page.url}`);
+}
+
+async function updateDoc(
+  ctx: CommandContext,
+  args: minimist.ParsedArgs
+): Promise<void> {
+  const pageId = args._[0];
+  const filePath = args._[1] as string | undefined;
+  const content = args.content as string | undefined;
+
+  if (!pageId || (!filePath && !content)) {
+    throw new Error(
+      "Usage: npx pm-skill update-doc <page-id> <file.md>\n" +
+        "       npx pm-skill update-doc <page-id> --content \"# Updated...\""
+    );
+  }
+
+  if (!ctx.notion) {
+    throw new Error("Notion is not configured. Run 'npx pm-skill init' with --notion-key.");
+  }
+
+  let markdown: string;
+  if (filePath) {
+    if (!existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    markdown = readFileSync(filePath, "utf-8");
+  } else {
+    markdown = content!;
+  }
+
+  await updatePageContent(ctx.notion, pageId, markdown);
+  console.log(`✅ Page updated: ${pageId}`);
+}
+
 async function del(
   ctx: CommandContext,
   args: minimist.ParsedArgs
@@ -573,6 +660,8 @@ const COMMANDS: Record<string, CommandFn> = {
   relate,
   block,
   "attach-doc": attachDoc,
+  "push-doc": pushDoc,
+  "update-doc": updateDoc,
   delete: del,
   get,
 };
@@ -581,7 +670,7 @@ const COMMANDS: Record<string, CommandFn> = {
 
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
-    string: ["severity", "type", "url", "title", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
+    string: ["severity", "type", "url", "title", "content", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
     boolean: ["sync", "version"],
     alias: { s: "severity", t: "type" },
   });
@@ -613,6 +702,13 @@ Commands:
   attach-doc <issue> --url U --title T --type Y
                                      Attach document (type: source-of-truth/issue-tracking/domain-knowledge)
   get <issue>                        Show issue details
+  push-doc <issue> <file.md> [--title T]
+                                     Upload markdown to Notion + link to issue
+  push-doc <issue> --title T --content "# md"
+                                     Push content directly (for AI agents)
+  update-doc <page-id> <file.md>     Replace Notion page content with markdown
+  update-doc <page-id> --content "# md"
+                                     Replace content directly
   delete <issue> [issue2 ...]        Delete issue(s)
   help                               Show this help
   --version                          Show version

@@ -1,5 +1,6 @@
 import { Client } from "@notionhq/client";
 import type { BlockObjectRequest } from "@notionhq/client/build/src/api-endpoints.js";
+import { markdownToBlocks } from "@tryfabric/martian";
 
 // ── Client ──
 
@@ -312,4 +313,77 @@ export async function searchPages(
       page.properties?.Name?.title?.[0]?.text?.content ??
       "(untitled)",
   }));
+}
+
+// ── Markdown Upload ──
+
+/**
+ * Convert markdown to Notion blocks.
+ */
+export function mdToBlocks(markdown: string): BlockObjectRequest[] {
+  return markdownToBlocks(markdown) as BlockObjectRequest[];
+}
+
+/**
+ * Create a Notion page from markdown content.
+ * Handles the 100-block-per-request API limit by chunking.
+ */
+export async function createPageFromMarkdown(
+  client: Client,
+  parentPageId: string,
+  title: string,
+  markdown: string
+): Promise<{ id: string; url: string }> {
+  const blocks = mdToBlocks(markdown);
+
+  // First batch goes with page creation (max 100)
+  const firstBatch = blocks.slice(0, 100);
+  const rest = blocks.slice(100);
+
+  const response = await client.pages.create({
+    parent: { page_id: parentPageId },
+    properties: {
+      title: { title: [{ text: { content: title } }] },
+    },
+    children: firstBatch,
+  });
+
+  const pageId = response.id;
+
+  // Append remaining blocks in chunks of 100
+  for (let i = 0; i < rest.length; i += 100) {
+    await client.blocks.children.append({
+      block_id: pageId,
+      children: rest.slice(i, i + 100),
+    });
+  }
+
+  return {
+    id: pageId,
+    url: `https://notion.so/${pageId.replace(/-/g, "")}`,
+  };
+}
+
+/**
+ * Clear all blocks from a page, then append new markdown content.
+ */
+export async function updatePageContent(
+  client: Client,
+  pageId: string,
+  markdown: string
+): Promise<void> {
+  // 1. Delete existing blocks
+  const existing = await client.blocks.children.list({ block_id: pageId });
+  for (const block of existing.results) {
+    await client.blocks.delete({ block_id: block.id });
+  }
+
+  // 2. Append new blocks
+  const blocks = mdToBlocks(markdown);
+  for (let i = 0; i < blocks.length; i += 100) {
+    await client.blocks.children.append({
+      block_id: pageId,
+      children: blocks.slice(i, i + 100),
+    });
+  }
 }

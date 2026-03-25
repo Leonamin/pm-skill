@@ -48,14 +48,15 @@
   "dependencies": {
     "@linear/sdk": "^80",
     "@notionhq/client": "^5",
+    "@tryfabric/martian": "^1.2.4",
     "js-yaml": "^4",
     "minimist": "^1"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "tsx": "^4",
     "@types/js-yaml": "^4",
     "@types/minimist": "^1",
-    "@types/node": "^22"
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5"
   }
 }
