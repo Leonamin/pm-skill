@@ -6,77 +6,61 @@ Structured project management CLI that integrates **Linear** and **Notion**. Des
 
 ## Features
 
+- **init** — Validate API keys, create `.env`, `config.yml`, `SKILL.md`, `AGENTS.md` in your project
+- **setup** — Verify connections, label matching, Notion status (`--sync` creates missing labels)
 - **start-feature** — Create Linear issue + Notion PRD page, auto-linked
 - **report-bug** — File bug with severity-based priority mapping
 - **add-task** — Add sub-issues to a parent
 - **relate / block** — Set issue relationships and dependencies
 - **attach-doc** — Attach documents with type validation
 - **get** — View issue details with children, relations, and attachments
-- **setup** — Verify connections and discover team/label IDs
 
-## Installation
-
-### Option A: npm (recommended)
+## Quick Start
 
 ```bash
-npm install -g pm-skill
-pm-skill help
+cd your-project
+
+# Initialize (validates keys, creates config files)
+npx pm-skill init --linear-key lin_api_xxx --notion-key secret_xxx
+
+# Verify label matching
+npx pm-skill setup
+
+# Create missing labels in Linear
+npx pm-skill setup --sync
 ```
 
-### Option B: npx (no install)
+This creates the following in your project:
+
+```
+your-project/
+├── .env                                    # API keys + project settings
+├── config.yml                              # Labels, templates, priorities
+├── .claude/skills/pm-skill/SKILL.md        # Claude Code auto-discovers this
+├── AGENTS.md                               # Codex auto-discovers this
+└── ...
+```
+
+## Setup Details
+
+### API Keys
+
+- **Linear**: Settings > API > Personal API Keys
+- **Notion**: https://www.notion.so/my-integrations > New integration
+
+### init options
 
 ```bash
-npx pm-skill help
+npx pm-skill init --linear-key <key> [options]
+  --notion-key    Notion API key (optional)
+  --team-id       Linear team ID (auto-detected if omitted)
+  --project-id    Linear project ID (optional)
+  --notion-page   Notion root page ID (optional)
 ```
 
-### Option C: Clone as Claude Code skill
+### Customize `config.yml`
 
-```bash
-git clone https://github.com/Leonamin/pm-skill.git ~/.claude/skills/pm-skill
-cd ~/.claude/skills/pm-skill && npm install
-```
-
-### Option D: Clone for Codex
-
-```bash
-git clone https://github.com/Leonamin/pm-skill.git ~/pm-skill
-cd ~/pm-skill && npm install
-# Codex will read AGENTS.md for instructions
-```
-
-## Setup
-
-### 1. Create `.env`
-
-Place `.env` in any of these locations (checked in order):
-1. Current working directory
-2. `~/.pm-skill/`
-3. Package root
-
-```bash
-# Copy the template
-cp .env.example ~/.pm-skill/.env
-# Edit with your API keys
-```
-
-```env
-LINEAR_API_KEY=lin_api_xxxxxxxx
-LINEAR_DEFAULT_TEAM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-NOTION_API_KEY=secret_xxxxxxxx
-NOTION_ROOT_PAGE_ID=xxxxxxxx
-```
-
-### 2. Run setup
-
-```bash
-pm-skill setup
-```
-
-This shows your Linear teams, workflow states, and labels — and verifies that `config.yml` labels match your Linear workspace.
-
-### 3. Customize `config.yml`
-
-Copy `config.yml` to `~/.pm-skill/config.yml` and edit labels, templates, priorities, and severity mappings to match your project.
+Edit `config.yml` in your project root to match your labels, templates, priorities, and severity mappings.
 
 **Rule: every label and template must have a `description` field.**
 
@@ -84,48 +68,47 @@ Copy `config.yml` to `~/.pm-skill/config.yml` and edit labels, templates, priori
 
 ```bash
 # Start a feature
-pm-skill start-feature "Booking cancellation"
+npx pm-skill start-feature "Booking cancellation"
 
 # Report a bug
-pm-skill report-bug "Payment amount error" --severity high
+npx pm-skill report-bug "Payment amount error" --severity high
 
 # Add sub-tasks
-pm-skill add-task ENG-10 "Write unit tests"
-pm-skill add-task ENG-10 "Frontend UI"
+npx pm-skill add-task ENG-10 "Write unit tests"
+npx pm-skill add-task ENG-10 "Frontend UI"
 
 # Link issues
-pm-skill relate ENG-10 ENG-8 --type related
-pm-skill block ENG-10 ENG-15
+npx pm-skill relate ENG-10 ENG-8 --type related
+npx pm-skill block ENG-10 ENG-15
 
 # Attach documents
-pm-skill attach-doc ENG-10 --url "https://notion.so/..." --title "Design Doc" --type source-of-truth
+npx pm-skill attach-doc ENG-10 --url "https://notion.so/..." --title "Design Doc" --type source-of-truth
 
 # View issue details
-pm-skill get ENG-10
+npx pm-skill get ENG-10
+
+# Check version
+npx pm-skill --version
 ```
 
 ## Using with AI Assistants
 
 ### Claude Code
 
-If installed as a skill in `~/.claude/skills/pm-skill/`, Claude Code auto-discovers it via `SKILL.md`. You can invoke commands through natural language:
+After `npx pm-skill init`, Claude Code auto-discovers the skill via `.claude/skills/pm-skill/SKILL.md`. You can invoke commands through natural language:
 
 > "Create a feature issue for booking cancellation"
 
 ### Codex
 
-Clone the repo and Codex reads `AGENTS.md` for command instructions. Run commands via:
-
-```bash
-npx tsx src/workflows.ts start-feature "Booking cancellation"
-```
+After `npx pm-skill init`, Codex reads `AGENTS.md` at the project root for command instructions.
 
 ### Any AI Assistant
 
 Any assistant that can execute shell commands can use pm-skill:
 
 ```bash
-pm-skill start-feature "My Feature"
+npx pm-skill start-feature "My Feature"
 ```
 
 ## Config Structure
@@ -138,6 +121,10 @@ pm-skill start-feature "My Feature"
 | `severity_mapping` | Severity name to priority key mapping |
 | `doc_types` | Document types for attach-doc validation |
 | `epics` | Epic definitions (project-specific) |
+
+## Per-Project Model
+
+All config is per-project. Each project gets its own `.env`, `config.yml`, and instruction files. Run `npx pm-skill init` in each project directory.
 
 ## License
 
