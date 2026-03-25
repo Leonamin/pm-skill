@@ -716,6 +716,53 @@ async function del(
   }
 }
 
+async function selectProject(args: minimist.ParsedArgs): Promise<void> {
+  // Load env manually — we need API key and team ID but not project ID
+  const { loadEnvFile, writeEnvFile } = await import("./env.js");
+  loadEnvFile();
+
+  const apiKey = process.env.LINEAR_API_KEY;
+  const teamId = process.env.LINEAR_DEFAULT_TEAM_ID;
+  if (!apiKey || !teamId) {
+    throw new Error("LINEAR_API_KEY and LINEAR_DEFAULT_TEAM_ID must be set. Run 'npx pm-skill init' first.");
+  }
+
+  const client = getLinearClient(apiKey);
+  const projects = await getTeamProjects(client, teamId);
+
+  if (projects.length === 0) {
+    console.log("No projects found for this team.");
+    return;
+  }
+
+  const projectIdArg = args._[0] as string | undefined;
+
+  if (projectIdArg) {
+    // Direct selection by ID or name
+    const match = projects.find(
+      (p) => p.id === projectIdArg || p.name.toLowerCase() === projectIdArg.toLowerCase()
+    );
+    if (!match) {
+      console.log("Available projects:");
+      for (const p of projects) {
+        console.log(`  ${p.name} | ${p.id}`);
+      }
+      throw new Error(`Project '${projectIdArg}' not found.`);
+    }
+    writeEnvFile(process.cwd(), { LINEAR_DEFAULT_PROJECT_ID: match.id });
+    console.log(`✅ Selected project: "${match.name}" (${match.id})`);
+  } else {
+    // List projects with current marker
+    const currentId = process.env.LINEAR_DEFAULT_PROJECT_ID;
+    console.log("Available projects:");
+    for (const p of projects) {
+      const marker = p.id === currentId ? " ← current" : "";
+      console.log(`  ${p.name} | ${p.id}${marker}`);
+    }
+    console.log(`\nUsage: npx pm-skill select-project "<name or id>"`);
+  }
+}
+
 // ── Command Registry ──
 
 const COMMANDS: Record<string, CommandFn> = {
@@ -761,6 +808,7 @@ Commands:
   init --linear-key K [--notion-key K]
                                      Initialize project (validates keys, creates .env, config.yml, SKILL.md, AGENTS.md)
   setup [--sync]                     Verify config & label matching (--sync creates missing labels)
+  select-project [name-or-id]        List or switch Linear project
   start-feature <title>              Start feature (Linear issue + Notion PRD)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
   add-task <parent> <title>          Add sub-task to an issue
@@ -785,9 +833,13 @@ All config is per-project (CWD). Run 'npx pm-skill init' in each project.`);
     return;
   }
 
-  // init runs independently — no env/config validation
+  // These commands run independently — no full env/config validation
   if (command === "init") {
     await init(args);
+    return;
+  }
+  if (command === "select-project") {
+    await selectProject(args);
     return;
   }
 
