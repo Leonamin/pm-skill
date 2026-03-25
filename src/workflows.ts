@@ -21,6 +21,7 @@ import {
   getLinearClient,
   validateLinearKey,
   createIssue,
+  deleteIssue,
   getIssue,
   getIssueDetail,
   createRelation,
@@ -29,6 +30,7 @@ import {
   getTeams,
   getTeamStates,
   getTeamLabels,
+  getTeamProjects,
   resolveLabels,
 } from "./linear.js";
 import {
@@ -123,7 +125,26 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
     }
   }
 
-  // 3. Validate Notion key + auto-detect root page
+  // 3. Auto-detect project
+  let selectedProjectId = projectId;
+  if (!selectedProjectId) {
+    const projects = await getTeamProjects(client, selectedTeamId);
+    if (projects.length === 0) {
+      console.log("  No projects found — skipping project assignment");
+    } else if (projects.length === 1) {
+      selectedProjectId = projects[0].id;
+      console.log(`  Auto-selected project: "${projects[0].name}"`);
+    } else {
+      console.log(`\n  Available projects (${projects.length}):`);
+      for (const proj of projects) {
+        console.log(`    ${proj.name} | ${proj.id}`);
+      }
+      selectedProjectId = projects[0].id;
+      console.log(`  Using first project: "${projects[0].name}". Override with --project-id <id>`);
+    }
+  }
+
+  // 4. Validate Notion key + auto-detect root page
   let selectedNotionPage = notionPage;
   if (notionKey) {
     console.log("\n[Notion] Validating API key...");
@@ -157,7 +178,7 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
     LINEAR_API_KEY: linearKey,
     LINEAR_DEFAULT_TEAM_ID: selectedTeamId,
   };
-  if (projectId) envEntries.LINEAR_DEFAULT_PROJECT_ID = projectId;
+  if (selectedProjectId) envEntries.LINEAR_DEFAULT_PROJECT_ID = selectedProjectId;
   if (notionKey) envEntries.NOTION_API_KEY = notionKey;
   if (selectedNotionPage) envEntries.NOTION_ROOT_PAGE_ID = selectedNotionPage;
 
@@ -526,6 +547,22 @@ async function get(
   }
 }
 
+async function del(
+  ctx: CommandContext,
+  args: minimist.ParsedArgs
+): Promise<void> {
+  const identifiers = args._ as string[];
+  if (identifiers.length === 0) {
+    throw new Error("Usage: npx pm-skill delete <issue> [issue2 ...]");
+  }
+
+  for (const identifier of identifiers) {
+    const issue = await getIssue(ctx.linear, identifier);
+    await deleteIssue(ctx.linear, issue.id);
+    console.log(`✅ Deleted: ${issue.identifier} (${issue.title})`);
+  }
+}
+
 // ── Command Registry ──
 
 const COMMANDS: Record<string, CommandFn> = {
@@ -536,6 +573,7 @@ const COMMANDS: Record<string, CommandFn> = {
   relate,
   block,
   "attach-doc": attachDoc,
+  delete: del,
   get,
 };
 
@@ -575,6 +613,7 @@ Commands:
   attach-doc <issue> --url U --title T --type Y
                                      Attach document (type: source-of-truth/issue-tracking/domain-knowledge)
   get <issue>                        Show issue details
+  delete <issue> [issue2 ...]        Delete issue(s)
   help                               Show this help
   --version                          Show version
 

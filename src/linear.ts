@@ -77,6 +77,22 @@ export async function updateIssue(
   await client.updateIssue(id, input);
 }
 
+export async function deleteIssue(
+  client: LinearClient,
+  id: string
+): Promise<void> {
+  await client.deleteIssue(id);
+}
+
+export async function getTeamProjects(
+  client: LinearClient,
+  teamId: string
+): Promise<Array<{ id: string; name: string }>> {
+  const team = await client.team(teamId);
+  const conn = await team.projects();
+  return conn.nodes.map((p) => ({ id: p.id, name: p.name }));
+}
+
 export async function getIssue(
   client: LinearClient,
   identifier: string
