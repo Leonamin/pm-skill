@@ -1,23 +1,18 @@
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(__dirname, "..");
-
-export const GLOBAL_DIR = resolve(homedir(), ".pm-skill");
+export const PKG_ROOT = resolve(__dirname, "..");
 
 /**
- * Resolve a file by checking multiple directories in order:
- * 1. CWD (project-local override)
- * 2. ~/.pm-skill/ (user-global config)
- * 3. Package root (bundled defaults)
+ * Resolve a file by checking:
+ * 1. CWD (project config)
+ * 2. Package root (bundled defaults — for config.yml, SKILL.md, AGENTS.md)
  */
 export function resolveFile(filename: string): string | null {
   const candidates = [
     resolve(process.cwd(), filename),
-    resolve(GLOBAL_DIR, filename),
     resolve(PKG_ROOT, filename),
   ];
   for (const p of candidates) {
@@ -43,7 +38,7 @@ const KEY_HELP: Record<string, string> = {
   LINEAR_API_KEY:
     "Linear > Settings > API > Personal API Keys",
   LINEAR_DEFAULT_TEAM_ID:
-    "'pm-skill init' or 'pm-skill setup' to discover your team ID",
+    "'npx pm-skill init' to discover your team ID",
   LINEAR_DEFAULT_PROJECT_ID:
     "Linear > Project Settings (optional)",
   NOTION_API_KEY: "https://www.notion.so/my-integrations",
@@ -54,11 +49,14 @@ const KEY_HELP: Record<string, string> = {
 };
 
 /**
- * Parse a single .env file and set values into process.env.
- * Does NOT overwrite existing values (earlier loads take precedence).
+ * Parse CWD/.env and set values into process.env.
+ * Does NOT overwrite existing env vars.
  */
-function parseEnvFile(filePath: string): void {
-  const content = readFileSync(filePath, "utf-8");
+export function loadEnvFile(): void {
+  const envPath = resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+
+  const content = readFileSync(envPath, "utf-8");
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -72,25 +70,8 @@ function parseEnvFile(filePath: string): void {
   }
 }
 
-/**
- * Hierarchical .env loading:
- * 1. CWD/.env (project-specific, highest priority)
- * 2. ~/.pm-skill/.env (global defaults, fills in missing keys)
- *
- * Both files are loaded. CWD values take precedence over global.
- */
-export function loadEnvFiles(): void {
-  const cwdEnv = resolve(process.cwd(), ".env");
-  const globalEnv = resolve(GLOBAL_DIR, ".env");
-
-  // CWD first — these values win
-  if (existsSync(cwdEnv)) parseEnvFile(cwdEnv);
-  // Global second — fills in anything CWD didn't set
-  if (existsSync(globalEnv)) parseEnvFile(globalEnv);
-}
-
 export function validateEnv(command: string): ValidatedEnv {
-  loadEnvFiles();
+  loadEnvFile();
 
   const missing: string[] = [];
 
@@ -117,8 +98,7 @@ export function validateEnv(command: string): ValidatedEnv {
       .join("\n");
     throw new Error(
       `Required environment variables are not set:\n${hints}\n\n` +
-        `Run 'pm-skill init' to set up, or create .env manually.\n` +
-        `Config lookup: CWD/.env → ~/.pm-skill/.env (both loaded, CWD wins).`
+        `Run 'npx pm-skill init' in your project directory to set up.`
     );
   }
 
@@ -133,9 +113,8 @@ export function validateEnv(command: string): ValidatedEnv {
 }
 
 /**
- * Write key=value pairs to a .env file.
+ * Write key=value pairs to a .env file in the given directory.
  * If the file exists, updates existing keys and appends new ones.
- * If not, creates it fresh.
  */
 export function writeEnvFile(
   targetDir: string,
@@ -162,7 +141,6 @@ export function writeEnvFile(
       }
       const key = trimmed.slice(0, eqIdx).trim();
       existing.set(key, trimmed);
-      // Will be replaced or kept
       if (key in entries) {
         lines.push(`${key}=${entries[key]}`);
       } else {
@@ -171,7 +149,6 @@ export function writeEnvFile(
     }
   }
 
-  // Append new keys not already in file
   for (const [key, val] of Object.entries(entries)) {
     if (!existing.has(key)) {
       lines.push(`${key}=${val}`);

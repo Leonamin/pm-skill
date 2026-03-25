@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import minimist from "minimist";
+import { existsSync, copyFileSync, mkdirSync, readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { type LinearClient as LinearClientType } from "@linear/sdk";
 import { type Client as NotionClientType } from "@notionhq/client";
 
-import { validateEnv, loadEnvFiles, writeEnvFile, resolveFile, GLOBAL_DIR, type ValidatedEnv } from "./env.js";
+import { validateEnv, writeEnvFile, resolveFile, PKG_ROOT, type ValidatedEnv } from "./env.js";
 import {
   loadConfig,
   getTemplate,
@@ -49,55 +52,43 @@ type CommandFn = (
   args: minimist.ParsedArgs
 ) => Promise<void>;
 
-// ── Init (runs before context — no env/config validation needed) ──
+// ── Init ──
 
-import { existsSync, copyFileSync, mkdirSync } from "fs";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(__dirname, "..");
-
-function copyDefaultConfig(targetDir: string): void {
-  const targetConfig = resolve(targetDir, "config.yml");
-  if (existsSync(targetConfig)) {
-    console.log(`  config.yml already exists at ${targetConfig} — skipped`);
+function copyBundledFile(srcName: string, destPath: string): void {
+  if (existsSync(destPath)) {
+    console.log(`  ${srcName} already exists — skipped`);
     return;
   }
-  const src = resolve(PKG_ROOT, "config.yml");
+  const src = resolve(PKG_ROOT, srcName);
   if (!existsSync(src)) {
-    console.log("  Warning: bundled config.yml not found — skipping copy");
+    console.log(`  Warning: bundled ${srcName} not found — skipping`);
     return;
   }
-  mkdirSync(targetDir, { recursive: true });
-  copyFileSync(src, targetConfig);
-  console.log(`  config.yml copied to ${targetConfig}`);
+  mkdirSync(dirname(destPath), { recursive: true });
+  copyFileSync(src, destPath);
+  console.log(`  ${srcName} → ${destPath}`);
 }
 
 async function init(args: minimist.ParsedArgs): Promise<void> {
   const linearKey = args["linear-key"] as string | undefined;
   const notionKey = args["notion-key"] as string | undefined;
-  const isGlobal = !!args.global;
   const teamId = args["team-id"] as string | undefined;
   const projectId = args["project-id"] as string | undefined;
   const notionPage = args["notion-page"] as string | undefined;
 
   if (!linearKey) {
     throw new Error(
-      "Usage: pm-skill init --linear-key <key> [--notion-key <key>] [--global]\n" +
+      "Usage: npx pm-skill init --linear-key <key> [--notion-key <key>]\n" +
         "  --linear-key    Linear API key (required)\n" +
         "  --notion-key    Notion API key (optional)\n" +
-        "  --global        Save to ~/.pm-skill/ instead of CWD\n" +
         "  --team-id       Linear team ID (auto-detected if omitted)\n" +
         "  --project-id    Linear project ID (optional)\n" +
         "  --notion-page   Notion root page ID (optional)"
     );
   }
 
-  const targetDir = isGlobal ? GLOBAL_DIR : process.cwd();
-  const targetLabel = isGlobal ? `~/.pm-skill/` : "CWD";
-
-  console.log(`=== pm-skill init (${targetLabel}) ===\n`);
+  const cwd = process.cwd();
+  console.log(`=== pm-skill init ===\n`);
 
   // 1. Validate Linear key
   console.log("[Linear] Validating API key...");
@@ -127,7 +118,7 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
       selectedTeamId = match.id;
       console.log(`  Team: ${match.key} (${match.name})`);
     } else {
-      throw new Error(`Team '${teamId}' not found. Run 'pm-skill init --linear-key <key>' to see available teams.`);
+      throw new Error(`Team '${teamId}' not found. Run 'npx pm-skill init --linear-key <key>' to see available teams.`);
     }
   }
 
@@ -139,7 +130,7 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
   }
 
   // 4. Write .env
-  console.log(`\n[Config] Writing .env to ${targetLabel}...`);
+  console.log("\n[Config] Writing .env...");
   const envEntries: Record<string, string> = {
     LINEAR_API_KEY: linearKey,
     LINEAR_DEFAULT_TEAM_ID: selectedTeamId,
@@ -148,26 +139,27 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
   if (notionKey) envEntries.NOTION_API_KEY = notionKey;
   if (notionPage) envEntries.NOTION_ROOT_PAGE_ID = notionPage;
 
-  const envPath = writeEnvFile(targetDir, envEntries);
+  const envPath = writeEnvFile(cwd, envEntries);
   console.log(`  Written: ${envPath}`);
 
-  // 5. Copy config.yml if missing
-  console.log(`\n[Config] Checking config.yml...`);
-  copyDefaultConfig(targetDir);
+  // 5. Copy config.yml, SKILL.md, AGENTS.md
+  console.log("\n[Files] Setting up project files...");
+  copyBundledFile("config.yml", resolve(cwd, "config.yml"));
+  copyBundledFile("SKILL.md", resolve(cwd, ".claude", "skills", "pm-skill", "SKILL.md"));
+  copyBundledFile("AGENTS.md", resolve(cwd, "AGENTS.md"));
 
   // 6. Summary
   console.log(`\n=== Init complete ===`);
-  console.log(`  .env:        ${envPath}`);
-  console.log(`  config.yml:  ${resolve(targetDir, "config.yml")}`);
-  console.log(`  Linear user: ${linearUser.name}`);
-  console.log(`  Team:        ${selectedTeamId}`);
-  if (notionKey) console.log(`  Notion:      connected`);
+  console.log(`  .env:       ${envPath}`);
+  console.log(`  config.yml: ${resolve(cwd, "config.yml")}`);
+  console.log(`  SKILL.md:   ${resolve(cwd, ".claude/skills/pm-skill/SKILL.md")}`);
+  console.log(`  AGENTS.md:  ${resolve(cwd, "AGENTS.md")}`);
+  console.log(`  Linear:     ${linearUser.name} | Team: ${selectedTeamId}`);
+  if (notionKey) console.log(`  Notion:     connected`);
   console.log(`\nNext steps:`);
-  if (isGlobal) {
-    console.log(`  - Per-project overrides: create .env in your project directory`);
-  }
-  console.log(`  - Customize config.yml labels/templates for your project`);
-  console.log(`  - Run 'pm-skill setup' to verify label matching`);
+  console.log(`  - Edit config.yml to match your project's labels/templates`);
+  console.log(`  - Run 'npx pm-skill setup' to verify label matching`);
+  console.log(`  - Run 'npx pm-skill setup --sync' to create missing labels in Linear`);
 }
 
 // ── Commands ──
@@ -199,7 +191,7 @@ async function setup(
 
   // 3. Labels + matching
   console.log("\n🏷️  Linear labels:");
-  let teamLabels = await getTeamLabels(ctx.linear, teamId);
+  const teamLabels = await getTeamLabels(ctx.linear, teamId);
   for (const label of teamLabels) {
     console.log(`  ${label.name} | ${label.id}`);
   }
@@ -235,7 +227,7 @@ async function setup(
     }
     console.log("\nLabels synced successfully.");
   } else if (missingLabels.length > 0) {
-    console.log(`\n💡 ${missingLabels.length} label(s) missing. Run 'pm-skill setup --sync' to create them.`);
+    console.log(`\n💡 ${missingLabels.length} label(s) missing. Run 'npx pm-skill setup --sync' to create them.`);
   } else {
     console.log("\n✅ All config labels matched.");
   }
@@ -259,7 +251,7 @@ async function setup(
     }
   } else {
     console.log("  ⚠️  NOTION_API_KEY not set — Notion features disabled");
-    console.log("  Set it via: pm-skill init --notion-key <key> --global");
+    console.log("  Run 'npx pm-skill init --linear-key <key> --notion-key <key>' to set up");
   }
 }
 
@@ -269,7 +261,7 @@ async function startFeature(
 ): Promise<void> {
   const title = args._[0];
   if (!title) {
-    throw new Error("사용법: start-feature <제목>");
+    throw new Error("Usage: pm-skill start-feature <title>");
   }
 
   const tmpl = getTemplate(ctx.config, "feature");
@@ -285,7 +277,6 @@ async function startFeature(
     ? resolvePriority(ctx.config, tmpl.linear_priority)
     : undefined;
 
-  // 1. Linear issue
   const issue = await createIssue(ctx.linear, {
     teamId: ctx.env.LINEAR_DEFAULT_TEAM_ID,
     title,
@@ -293,13 +284,10 @@ async function startFeature(
     labelIds,
     projectId: ctx.env.LINEAR_DEFAULT_PROJECT_ID,
   });
-  const issueId = issue.identifier;
-  const issueUrl = issue.url;
-  console.log(`[Linear] 이슈 생성: ${issueId} — ${issueUrl}`);
+  console.log(`[Linear] Issue created: ${issue.identifier} — ${issue.url}`);
 
-  // 2. Notion page
   if (!ctx.notion || !ctx.env.NOTION_ROOT_PAGE_ID) {
-    console.log("[Notion] Notion 설정 없음 — 페이지 생성 생략");
+    console.log("[Notion] Not configured — skipping page creation");
     return;
   }
 
@@ -308,15 +296,13 @@ async function startFeature(
     ctx.env.NOTION_ROOT_PAGE_ID,
     tmpl.notion_template,
     title,
-    issueUrl
+    issue.url
   );
-  console.log(`[Notion] 페이지 생성: ${page.url}`);
+  console.log(`[Notion] Page created: ${page.url}`);
 
-  // 3. Link Linear → Notion
   await createAttachment(ctx.linear, issue.id, page.url, `${title} — PRD`);
-  console.log(`[Link] Linear ↔ Notion 연결 완료`);
-
-  console.log(`\n✅ 기능 시작: ${issueId} | Notion: ${page.url}`);
+  console.log(`[Link] Linear ↔ Notion linked`);
+  console.log(`\n✅ Feature started: ${issue.identifier} | Notion: ${page.url}`);
 }
 
 async function reportBug(
@@ -325,7 +311,7 @@ async function reportBug(
 ): Promise<void> {
   const title = args._[0];
   if (!title) {
-    throw new Error("사용법: report-bug <제목> [--severity high]");
+    throw new Error("Usage: pm-skill report-bug <title> [--severity high]");
   }
 
   const severity = (args.severity as string) ?? "medium";
@@ -341,7 +327,6 @@ async function reportBug(
   );
   const labelIds = resolveLabels(configLabels, teamLabels);
 
-  // 1. Linear issue
   const issue = await createIssue(ctx.linear, {
     teamId: ctx.env.LINEAR_DEFAULT_TEAM_ID,
     title,
@@ -349,47 +334,40 @@ async function reportBug(
     labelIds,
     projectId: ctx.env.LINEAR_DEFAULT_PROJECT_ID,
   });
-  const issueId = issue.identifier;
-  const issueUrl = issue.url;
-  console.log(`[Linear] 버그 이슈 생성: ${issueId} (severity: ${severity}) — ${issueUrl}`);
+  console.log(`[Linear] Bug created: ${issue.identifier} (severity: ${severity}) — ${issue.url}`);
 
-  // 2. Notion
   if (!ctx.notion) {
-    console.log("[Notion] Notion 설정 없음 — 문서 생성 생략");
+    console.log("[Notion] Not configured — skipping");
     return;
   }
 
   let notionUrl: string;
 
   if (ctx.env.NOTION_BUG_DB_ID) {
-    // DB 엔트리
     const entry = await createDatabaseEntry(ctx.notion, ctx.env.NOTION_BUG_DB_ID, {
       Name: { title: [{ text: { content: title } }] },
     });
     notionUrl = entry.url;
-    console.log(`[Notion] 버그 DB 엔트리 생성: ${notionUrl}`);
+    console.log(`[Notion] Bug DB entry: ${notionUrl}`);
   } else if (ctx.env.NOTION_ROOT_PAGE_ID) {
-    // 페이지
     const page = await createTemplatedPage(
       ctx.notion,
       ctx.env.NOTION_ROOT_PAGE_ID,
       tmpl.notion_template,
       title,
-      issueUrl,
+      issue.url,
       severity
     );
     notionUrl = page.url;
-    console.log(`[Notion] 버그리포트 페이지 생성: ${notionUrl}`);
+    console.log(`[Notion] Bug report page: ${notionUrl}`);
   } else {
-    console.log("[Notion] NOTION_ROOT_PAGE_ID 미설정 — 문서 생성 생략");
+    console.log("[Notion] NOTION_ROOT_PAGE_ID not set — skipping");
     return;
   }
 
-  // 3. Link
   await createAttachment(ctx.linear, issue.id, notionUrl, `${title} — Bug Report`);
-  console.log(`[Link] Linear ↔ Notion 연결 완료`);
-
-  console.log(`\n✅ 버그 리포트: ${issueId} | Notion: ${notionUrl}`);
+  console.log(`[Link] Linear ↔ Notion linked`);
+  console.log(`\n✅ Bug reported: ${issue.identifier} | Notion: ${notionUrl}`);
 }
 
 async function addTask(
@@ -399,7 +377,7 @@ async function addTask(
   const parentIdentifier = args._[0];
   const title = args._[1];
   if (!parentIdentifier || !title) {
-    throw new Error("사용법: add-task <부모이슈> <제목>");
+    throw new Error("Usage: pm-skill add-task <parent-issue> <title>");
   }
 
   const parent = await getIssue(ctx.linear, parentIdentifier);
@@ -410,9 +388,7 @@ async function addTask(
     projectId: ctx.env.LINEAR_DEFAULT_PROJECT_ID,
   });
 
-  console.log(
-    `✅ 하위 이슈 생성: ${child.identifier} (부모: ${parent.identifier})`
-  );
+  console.log(`✅ Sub-issue created: ${child.identifier} (parent: ${parent.identifier})`);
 }
 
 async function relate(
@@ -422,13 +398,13 @@ async function relate(
   const id1 = args._[0];
   const id2 = args._[1];
   if (!id1 || !id2) {
-    throw new Error("사용법: relate <이슈1> <이슈2> [--type related]");
+    throw new Error("Usage: pm-skill relate <issue1> <issue2> [--type related]");
   }
 
   const type = (args.type as string) ?? "related";
   if (type !== "related" && type !== "similar") {
     throw new Error(
-      `relate 커맨드는 'related' 또는 'similar' 타입만 지원합니다. blocks 관계는 'block' 커맨드를 사용하세요.`
+      `relate only supports 'related' or 'similar'. Use 'block' command for blocking relationships.`
     );
   }
 
@@ -436,7 +412,7 @@ async function relate(
   const issue2 = await getIssue(ctx.linear, id2);
   await createRelation(ctx.linear, issue1.id, issue2.id, type as "related");
 
-  console.log(`✅ ${id1} ↔ ${id2} (${type}) 관계 생성 완료`);
+  console.log(`✅ ${id1} ↔ ${id2} (${type}) linked`);
 }
 
 async function block(
@@ -446,14 +422,14 @@ async function block(
   const id1 = args._[0];
   const id2 = args._[1];
   if (!id1 || !id2) {
-    throw new Error("사용법: block <선행이슈> <후행이슈>");
+    throw new Error("Usage: pm-skill block <blocker> <blocked>");
   }
 
   const issue1 = await getIssue(ctx.linear, id1);
   const issue2 = await getIssue(ctx.linear, id2);
   await createRelation(ctx.linear, issue1.id, issue2.id, "blocks");
 
-  console.log(`✅ ${id1}이 ${id2}를 선행합니다 (blocks)`);
+  console.log(`✅ ${id1} blocks ${id2}`);
 }
 
 async function attachDoc(
@@ -467,7 +443,7 @@ async function attachDoc(
 
   if (!identifier || !url || !title || !type) {
     throw new Error(
-      '사용법: attach-doc <이슈> --url "URL" --title "제목" --type <유형>'
+      'Usage: pm-skill attach-doc <issue> --url "URL" --title "Title" --type <type>'
     );
   }
 
@@ -475,9 +451,7 @@ async function attachDoc(
   const issue = await getIssue(ctx.linear, identifier);
   await createAttachment(ctx.linear, issue.id, url, title, type);
 
-  console.log(
-    `✅ ${identifier}에 문서 첨부: "${title}" (${type}) — ${url}`
-  );
+  console.log(`✅ ${identifier}: attached "${title}" (${type}) — ${url}`);
 }
 
 async function get(
@@ -486,7 +460,7 @@ async function get(
 ): Promise<void> {
   const identifier = args._[0];
   if (!identifier) {
-    throw new Error("사용법: get <이슈>");
+    throw new Error("Usage: pm-skill get <issue>");
   }
 
   const detail = await getIssueDetail(ctx.linear, identifier);
@@ -498,11 +472,11 @@ async function get(
 
   console.log(`\n${issue.identifier}: ${issue.title}`);
   console.log(
-    `상태: ${state?.name ?? "?"} | 우선순위: ${issue.priority ?? "?"} | 라벨: ${labelNames || "없음"}`
+    `State: ${state?.name ?? "?"} | Priority: ${issue.priority ?? "?"} | Labels: ${labelNames || "none"}`
   );
 
   if (children.length > 0) {
-    console.log("\n하위 이슈:");
+    console.log("\nSub-issues:");
     for (const child of children) {
       const childState = await child.state;
       console.log(
@@ -512,7 +486,7 @@ async function get(
   }
 
   if (relations.length > 0) {
-    console.log("\n관계:");
+    console.log("\nRelations:");
     for (const rel of relations) {
       const arrow = rel.type === "blocks" ? "→ blocks" : "↔ related";
       console.log(
@@ -522,10 +496,10 @@ async function get(
   }
 
   if (attachments.length > 0) {
-    console.log("\n첨부 문서:");
+    console.log("\nAttachments:");
     for (const att of attachments) {
       const typeLabel = att.subtitle ? ` (${att.subtitle})` : "";
-      console.log(`  📄 ${att.title}${typeLabel} — ${att.url}`);
+      console.log(`  ${att.title}${typeLabel} — ${att.url}`);
     }
   }
 }
@@ -548,29 +522,28 @@ const COMMANDS: Record<string, CommandFn> = {
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
     string: ["severity", "type", "url", "title", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
-    boolean: ["global", "sync", "version"],
+    boolean: ["sync", "version"],
     alias: { s: "severity", t: "type" },
   });
 
   // --version
   if (args.version) {
-    const { readFileSync } = await import("fs");
     const pkg = JSON.parse(readFileSync(resolve(PKG_ROOT, "package.json"), "utf-8"));
     console.log(`pm-skill v${pkg.version}`);
     return;
   }
 
   const command = args._[0] as string;
-  args._ = args._.slice(1); // command 제거, 나머지가 positional args
+  args._ = args._.slice(1);
 
   if (!command || command === "help") {
     console.log(`pm-skill — Structured project management CLI (Linear + Notion)
 
-Usage: pm-skill <command> [args] [flags]
+Usage: npx pm-skill <command> [args] [flags]
 
 Commands:
-  init --linear-key K [--notion-key K] [--global]
-                                     Initialize config & validate API keys
+  init --linear-key K [--notion-key K]
+                                     Initialize project (validates keys, creates .env, config.yml, SKILL.md, AGENTS.md)
   setup [--sync]                     Verify config & label matching (--sync creates missing labels)
   start-feature <title>              Start feature (Linear issue + Notion PRD)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
@@ -581,8 +554,9 @@ Commands:
                                      Attach document (type: source-of-truth/issue-tracking/domain-knowledge)
   get <issue>                        Show issue details
   help                               Show this help
+  --version                          Show version
 
-Config lookup: CWD/.env + ~/.pm-skill/.env (both loaded, CWD wins)`);
+All config is per-project (CWD). Run 'npx pm-skill init' in each project.`);
     return;
   }
 
@@ -600,20 +574,15 @@ Config lookup: CWD/.env + ~/.pm-skill/.env (both loaded, CWD wins)`);
     );
   }
 
-  // Validate env
   const env = validateEnv(command);
-
-  // Load & validate config
   const config = loadConfig();
 
-  // Build context
   const linear = getLinearClient(env.LINEAR_API_KEY);
   const notion = env.NOTION_API_KEY
     ? getNotionClient(env.NOTION_API_KEY)
     : null;
 
   const ctx: CommandContext = { config, linear, notion, env };
-
   await cmdFn(ctx, args);
 }
 
