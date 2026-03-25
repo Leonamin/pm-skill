@@ -4,7 +4,7 @@ import minimist from "minimist";
 import { type LinearClient as LinearClientType } from "@linear/sdk";
 import { type Client as NotionClientType } from "@notionhq/client";
 
-import { validateEnv, type ValidatedEnv } from "./env.js";
+import { validateEnv, loadEnvFiles, writeEnvFile, resolveFile, GLOBAL_DIR, type ValidatedEnv } from "./env.js";
 import {
   loadConfig,
   getTemplate,
@@ -16,6 +16,7 @@ import {
 } from "./config.js";
 import {
   getLinearClient,
+  validateLinearKey,
   createIssue,
   getIssue,
   getIssueDetail,
@@ -30,6 +31,7 @@ import {
   getNotionClient,
   createTemplatedPage,
   createDatabaseEntry,
+  validateNotionKey,
 } from "./notion.js";
 
 // ── CommandContext ──
@@ -45,6 +47,127 @@ type CommandFn = (
   ctx: CommandContext,
   args: minimist.ParsedArgs
 ) => Promise<void>;
+
+// ── Init (runs before context — no env/config validation needed) ──
+
+import { existsSync, copyFileSync, mkdirSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PKG_ROOT = resolve(__dirname, "..");
+
+function copyDefaultConfig(targetDir: string): void {
+  const targetConfig = resolve(targetDir, "config.yml");
+  if (existsSync(targetConfig)) {
+    console.log(`  config.yml already exists at ${targetConfig} — skipped`);
+    return;
+  }
+  const src = resolve(PKG_ROOT, "config.yml");
+  if (!existsSync(src)) {
+    console.log("  Warning: bundled config.yml not found — skipping copy");
+    return;
+  }
+  mkdirSync(targetDir, { recursive: true });
+  copyFileSync(src, targetConfig);
+  console.log(`  config.yml copied to ${targetConfig}`);
+}
+
+async function init(args: minimist.ParsedArgs): Promise<void> {
+  const linearKey = args["linear-key"] as string | undefined;
+  const notionKey = args["notion-key"] as string | undefined;
+  const isGlobal = !!args.global;
+  const teamId = args["team-id"] as string | undefined;
+  const projectId = args["project-id"] as string | undefined;
+  const notionPage = args["notion-page"] as string | undefined;
+
+  if (!linearKey) {
+    throw new Error(
+      "Usage: pm-skill init --linear-key <key> [--notion-key <key>] [--global]\n" +
+        "  --linear-key    Linear API key (required)\n" +
+        "  --notion-key    Notion API key (optional)\n" +
+        "  --global        Save to ~/.pm-skill/ instead of CWD\n" +
+        "  --team-id       Linear team ID (auto-detected if omitted)\n" +
+        "  --project-id    Linear project ID (optional)\n" +
+        "  --notion-page   Notion root page ID (optional)"
+    );
+  }
+
+  const targetDir = isGlobal ? GLOBAL_DIR : process.cwd();
+  const targetLabel = isGlobal ? `~/.pm-skill/` : "CWD";
+
+  console.log(`=== pm-skill init (${targetLabel}) ===\n`);
+
+  // 1. Validate Linear key
+  console.log("[Linear] Validating API key...");
+  const linearUser = await validateLinearKey(linearKey);
+  console.log(`  Authenticated as: ${linearUser.name} (${linearUser.email})`);
+
+  // 2. Discover teams + auto-select
+  const client = getLinearClient(linearKey);
+  const teams = await getTeams(client);
+  let selectedTeamId = teamId;
+
+  if (!selectedTeamId) {
+    if (teams.length === 1) {
+      selectedTeamId = teams[0].id;
+      console.log(`  Auto-selected team: ${teams[0].key} (${teams[0].name})`);
+    } else {
+      console.log("\n  Available teams:");
+      for (const team of teams) {
+        console.log(`    ${team.key} | ${team.name} | ${team.id}`);
+      }
+      selectedTeamId = teams[0].id;
+      console.log(`  Using first team: ${teams[0].key}. Override with --team-id <id>`);
+    }
+  } else {
+    const match = teams.find((t) => t.id === teamId || t.key === teamId);
+    if (match) {
+      selectedTeamId = match.id;
+      console.log(`  Team: ${match.key} (${match.name})`);
+    } else {
+      throw new Error(`Team '${teamId}' not found. Run 'pm-skill init --linear-key <key>' to see available teams.`);
+    }
+  }
+
+  // 3. Validate Notion key (optional)
+  if (notionKey) {
+    console.log("\n[Notion] Validating API key...");
+    const notionUser = await validateNotionKey(notionKey);
+    console.log(`  Authenticated as: ${notionUser.name}`);
+  }
+
+  // 4. Write .env
+  console.log(`\n[Config] Writing .env to ${targetLabel}...`);
+  const envEntries: Record<string, string> = {
+    LINEAR_API_KEY: linearKey,
+    LINEAR_DEFAULT_TEAM_ID: selectedTeamId,
+  };
+  if (projectId) envEntries.LINEAR_DEFAULT_PROJECT_ID = projectId;
+  if (notionKey) envEntries.NOTION_API_KEY = notionKey;
+  if (notionPage) envEntries.NOTION_ROOT_PAGE_ID = notionPage;
+
+  const envPath = writeEnvFile(targetDir, envEntries);
+  console.log(`  Written: ${envPath}`);
+
+  // 5. Copy config.yml if missing
+  console.log(`\n[Config] Checking config.yml...`);
+  copyDefaultConfig(targetDir);
+
+  // 6. Summary
+  console.log(`\n=== Init complete ===`);
+  console.log(`  .env:        ${envPath}`);
+  console.log(`  config.yml:  ${resolve(targetDir, "config.yml")}`);
+  console.log(`  Linear user: ${linearUser.name}`);
+  console.log(`  Team:        ${selectedTeamId}`);
+  if (notionKey) console.log(`  Notion:      connected`);
+  console.log(`\nNext steps:`);
+  if (isGlobal) {
+    console.log(`  - Per-project overrides: create .env in your project directory`);
+  }
+  console.log(`  - Customize config.yml labels/templates for your project`);
+  console.log(`  - Run 'pm-skill setup' to verify label matching`);
+}
 
 // ── Commands ──
 
@@ -391,7 +514,8 @@ const COMMANDS: Record<string, CommandFn> = {
 
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
-    string: ["severity", "type", "url", "title"],
+    string: ["severity", "type", "url", "title", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
+    boolean: ["global"],
     alias: { s: "severity", t: "type" },
   });
 
@@ -404,6 +528,8 @@ async function main(): Promise<void> {
 Usage: pm-skill <command> [args] [flags]
 
 Commands:
+  init --linear-key K [--notion-key K] [--global]
+                                     Initialize config & validate API keys
   setup                              Verify Linear/Notion connection & show config
   start-feature <title>              Start feature (Linear issue + Notion PRD)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
@@ -415,15 +541,21 @@ Commands:
   get <issue>                        Show issue details
   help                               Show this help
 
-Config lookup order: CWD → ~/.pm-skill/ → package root`);
+Config lookup: CWD/.env + ~/.pm-skill/.env (both loaded, CWD wins)`);
+    return;
+  }
+
+  // init runs independently — no env/config validation
+  if (command === "init") {
+    await init(args);
     return;
   }
 
   const cmdFn = COMMANDS[command];
   if (!cmdFn) {
-    const available = Object.keys(COMMANDS).join(", ");
+    const available = ["init", ...Object.keys(COMMANDS)].join(", ");
     throw new Error(
-      `알 수 없는 커맨드: '${command}'\n사용 가능한 커맨드: ${available}`
+      `Unknown command: '${command}'\nAvailable: ${available}`
     );
   }
 

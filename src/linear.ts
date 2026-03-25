@@ -11,6 +11,20 @@ export function getLinearClient(apiKey: string): LinearClient {
   return _client;
 }
 
+/**
+ * Validate a Linear API key by calling viewer endpoint.
+ * Returns user info on success, throws on failure.
+ */
+export async function validateLinearKey(apiKey: string): Promise<{ id: string; name: string; email: string }> {
+  const client = new LinearClient({ apiKey });
+  try {
+    const viewer = await client.viewer;
+    return { id: viewer.id, name: viewer.name, email: viewer.email };
+  } catch {
+    throw new Error("Linear API key validation failed. Check your key at: Linear > Settings > API > Personal API Keys");
+  }
+}
+
 // ── Types ──
 
 export interface CreateIssueOpts {

@@ -12,6 +12,20 @@ export function getNotionClient(apiKey: string): Client {
   return _client;
 }
 
+/**
+ * Validate a Notion API key by calling users.me endpoint.
+ * Returns bot info on success, throws on failure.
+ */
+export async function validateNotionKey(apiKey: string): Promise<{ id: string; name: string }> {
+  const client = new Client({ auth: apiKey });
+  try {
+    const me = await client.users.me({});
+    return { id: me.id, name: me.name ?? "(unnamed integration)" };
+  } catch {
+    throw new Error("Notion API key validation failed. Check your key at: https://www.notion.so/my-integrations");
+  }
+}
+
 // ── Types ──
 
 type RichText = {

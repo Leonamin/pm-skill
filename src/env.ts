@@ -1,10 +1,12 @@
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
+
+export const GLOBAL_DIR = resolve(homedir(), ".pm-skill");
 
 /**
  * Resolve a file by checking multiple directories in order:
@@ -15,7 +17,7 @@ const PKG_ROOT = resolve(__dirname, "..");
 export function resolveFile(filename: string): string | null {
   const candidates = [
     resolve(process.cwd(), filename),
-    resolve(homedir(), ".pm-skill", filename),
+    resolve(GLOBAL_DIR, filename),
     resolve(PKG_ROOT, filename),
   ];
   for (const p of candidates) {
@@ -41,7 +43,7 @@ const KEY_HELP: Record<string, string> = {
   LINEAR_API_KEY:
     "Linear > Settings > API > Personal API Keys",
   LINEAR_DEFAULT_TEAM_ID:
-    "'pm-skill setup' to discover your team ID",
+    "'pm-skill init' or 'pm-skill setup' to discover your team ID",
   LINEAR_DEFAULT_PROJECT_ID:
     "Linear > Project Settings (optional)",
   NOTION_API_KEY: "https://www.notion.so/my-integrations",
@@ -51,11 +53,12 @@ const KEY_HELP: Record<string, string> = {
     "Notion DB ID for bug tracking (optional — falls back to page creation)",
 };
 
-export function loadEnvFile(): void {
-  const envPath = resolveFile(".env");
-  if (!envPath) return;
-
-  const content = readFileSync(envPath, "utf-8");
+/**
+ * Parse a single .env file and set values into process.env.
+ * Does NOT overwrite existing values (earlier loads take precedence).
+ */
+function parseEnvFile(filePath: string): void {
+  const content = readFileSync(filePath, "utf-8");
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -69,12 +72,29 @@ export function loadEnvFile(): void {
   }
 }
 
+/**
+ * Hierarchical .env loading:
+ * 1. CWD/.env (project-specific, highest priority)
+ * 2. ~/.pm-skill/.env (global defaults, fills in missing keys)
+ *
+ * Both files are loaded. CWD values take precedence over global.
+ */
+export function loadEnvFiles(): void {
+  const cwdEnv = resolve(process.cwd(), ".env");
+  const globalEnv = resolve(GLOBAL_DIR, ".env");
+
+  // CWD first — these values win
+  if (existsSync(cwdEnv)) parseEnvFile(cwdEnv);
+  // Global second — fills in anything CWD didn't set
+  if (existsSync(globalEnv)) parseEnvFile(globalEnv);
+}
+
 export function validateEnv(command: string): ValidatedEnv {
-  loadEnvFile();
+  loadEnvFiles();
 
   const missing: string[] = [];
 
-  if (command === "setup") {
+  if (command === "setup" || command === "init") {
     if (!process.env.LINEAR_API_KEY) {
       missing.push("LINEAR_API_KEY");
     }
@@ -97,8 +117,8 @@ export function validateEnv(command: string): ValidatedEnv {
       .join("\n");
     throw new Error(
       `Required environment variables are not set:\n${hints}\n\n` +
-        `Create a .env file in one of: CWD, ~/.pm-skill/, or the package root.\n` +
-        `See .env.example for the template.`
+        `Run 'pm-skill init' to set up, or create .env manually.\n` +
+        `Config lookup: CWD/.env → ~/.pm-skill/.env (both loaded, CWD wins).`
     );
   }
 
@@ -110,4 +130,54 @@ export function validateEnv(command: string): ValidatedEnv {
     NOTION_ROOT_PAGE_ID: process.env.NOTION_ROOT_PAGE_ID,
     NOTION_BUG_DB_ID: process.env.NOTION_BUG_DB_ID,
   };
+}
+
+/**
+ * Write key=value pairs to a .env file.
+ * If the file exists, updates existing keys and appends new ones.
+ * If not, creates it fresh.
+ */
+export function writeEnvFile(
+  targetDir: string,
+  entries: Record<string, string>
+): string {
+  mkdirSync(targetDir, { recursive: true });
+  const envPath = resolve(targetDir, ".env");
+
+  const existing = new Map<string, string>();
+  const lines: string[] = [];
+
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        lines.push(line);
+        continue;
+      }
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx === -1) {
+        lines.push(line);
+        continue;
+      }
+      const key = trimmed.slice(0, eqIdx).trim();
+      existing.set(key, trimmed);
+      // Will be replaced or kept
+      if (key in entries) {
+        lines.push(`${key}=${entries[key]}`);
+      } else {
+        lines.push(line);
+      }
+    }
+  }
+
+  // Append new keys not already in file
+  for (const [key, val] of Object.entries(entries)) {
+    if (!existing.has(key)) {
+      lines.push(`${key}=${val}`);
+    }
+  }
+
+  writeFileSync(envPath, lines.join("\n") + "\n", "utf-8");
+  return envPath;
 }
