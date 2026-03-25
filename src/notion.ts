@@ -315,6 +315,29 @@ export async function searchPages(
   }));
 }
 
+// ── Page Deletion ──
+
+/**
+ * Archive (delete) a Notion page by ID.
+ */
+export async function deletePage(client: Client, pageId: string): Promise<void> {
+  await client.pages.update({ page_id: pageId, archived: true });
+}
+
+/**
+ * Extract Notion page ID from a Notion URL.
+ * Handles formats like: https://notion.so/abc123def456... or https://www.notion.so/workspace/Page-Title-abc123def456
+ */
+export function extractNotionPageId(url: string): string | null {
+  const match = url.match(/([a-f0-9]{32})(?:\?|$)/);
+  if (match) {
+    const raw = match[1];
+    // Format as UUID
+    return `${raw.slice(0, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}-${raw.slice(16, 20)}-${raw.slice(20)}`;
+  }
+  return null;
+}
+
 // ── Markdown Upload ──
 
 /**

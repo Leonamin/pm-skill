@@ -41,6 +41,8 @@ import {
   searchPages,
   createPageFromMarkdown,
   updatePageContent,
+  deletePage,
+  extractNotionPageId,
 } from "./notion.js";
 
 // ── CommandContext ──
@@ -348,6 +350,7 @@ async function startFeature(
   await createAttachment(ctx.linear, issue.id, page.url, `${title} — PRD`);
   console.log(`[Link] Linear ↔ Notion linked`);
   console.log(`\n✅ Feature started: ${issue.identifier} | Notion: ${page.url}`);
+  console.log(`   Notion Page ID: ${page.id} (use with --parent for sub-docs)`);
 }
 
 async function reportBug(
@@ -557,16 +560,22 @@ async function pushDoc(
   const filePath = args._[1] as string | undefined;
   const content = args.content as string | undefined;
   const title = args.title as string | undefined;
+  const parentPageId = args.parent as string | undefined;
 
   if (!identifier || (!filePath && !content)) {
     throw new Error(
-      "Usage: npx pm-skill push-doc <issue> <file.md> [--title T]\n" +
-        "       npx pm-skill push-doc <issue> --title T --content \"# Markdown...\""
+      "Usage: npx pm-skill push-doc <issue> <file.md> [--title T] [--parent P]\n" +
+        "       npx pm-skill push-doc <issue> --title T --content \"# md\" [--parent P]"
     );
   }
 
-  if (!ctx.notion || !ctx.env.NOTION_ROOT_PAGE_ID) {
+  if (!ctx.notion) {
     throw new Error("Notion is not configured. Run 'npx pm-skill init' with --notion-key.");
+  }
+
+  const targetParent = parentPageId ?? ctx.env.NOTION_ROOT_PAGE_ID;
+  if (!targetParent) {
+    throw new Error("No Notion parent page. Set NOTION_ROOT_PAGE_ID or use --parent <page-id>.");
   }
 
   // Read markdown
@@ -586,14 +595,15 @@ async function pushDoc(
   // Get Linear issue for linking
   const issue = await getIssue(ctx.linear, identifier);
 
-  // Create Notion page
+  // Create Notion page under specified parent
   const page = await createPageFromMarkdown(
     ctx.notion,
-    ctx.env.NOTION_ROOT_PAGE_ID,
+    targetParent,
     docTitle,
     markdown
   );
   console.log(`[Notion] Page created: "${docTitle}" — ${page.url}`);
+  console.log(`[Notion] Page ID: ${page.id}`);
 
   // Link to Linear issue
   await createAttachment(ctx.linear, issue.id, page.url, docTitle, "source-of-truth");
@@ -634,6 +644,43 @@ async function updateDoc(
   console.log(`✅ Page updated: ${pageId}`);
 }
 
+async function createFolder(
+  ctx: CommandContext,
+  args: minimist.ParsedArgs
+): Promise<void> {
+  const folderName = args._[0];
+  const parentPageId = args.parent as string | undefined;
+
+  if (!folderName) {
+    throw new Error("Usage: npx pm-skill create-folder <name> [--parent <page-id>]");
+  }
+
+  if (!ctx.notion) {
+    throw new Error("Notion is not configured. Run 'npx pm-skill init' with --notion-key.");
+  }
+
+  const targetParent = parentPageId ?? ctx.env.NOTION_ROOT_PAGE_ID;
+  if (!targetParent) {
+    throw new Error("No Notion parent page. Set NOTION_ROOT_PAGE_ID or use --parent <page-id>.");
+  }
+
+  const response = await ctx.notion.pages.create({
+    parent: { page_id: targetParent },
+    properties: {
+      title: { title: [{ text: { content: folderName } }] },
+    },
+    children: [],
+  });
+
+  const pageId = response.id;
+  const url = `https://notion.so/${pageId.replace(/-/g, "")}`;
+
+  console.log(`✅ Folder created: "${folderName}"`);
+  console.log(`   Page ID: ${pageId}`);
+  console.log(`   URL: ${url}`);
+  console.log(`\nUse with: npx pm-skill push-doc <issue> <file> --parent ${pageId}`);
+}
+
 async function del(
   ctx: CommandContext,
   args: minimist.ParsedArgs
@@ -644,9 +691,28 @@ async function del(
   }
 
   for (const identifier of identifiers) {
-    const issue = await getIssue(ctx.linear, identifier);
-    await deleteIssue(ctx.linear, issue.id);
-    console.log(`✅ Deleted: ${issue.identifier} (${issue.title})`);
+    const detail = await getIssueDetail(ctx.linear, identifier);
+
+    // Delete linked Notion pages
+    if (ctx.notion && detail.attachments.length > 0) {
+      for (const att of detail.attachments) {
+        if (att.url.includes("notion.so")) {
+          const pageId = extractNotionPageId(att.url);
+          if (pageId) {
+            try {
+              await deletePage(ctx.notion, pageId);
+              console.log(`  [Notion] Deleted: ${att.title}`);
+            } catch {
+              console.log(`  [Notion] Could not delete: ${att.url} (may already be deleted or no access)`);
+            }
+          }
+        }
+      }
+    }
+
+    // Delete Linear issue
+    await deleteIssue(ctx.linear, detail.issue.id);
+    console.log(`✅ Deleted: ${detail.issue.identifier} (${detail.issue.title})`);
   }
 }
 
@@ -662,6 +728,7 @@ const COMMANDS: Record<string, CommandFn> = {
   "attach-doc": attachDoc,
   "push-doc": pushDoc,
   "update-doc": updateDoc,
+  "create-folder": createFolder,
   delete: del,
   get,
 };
@@ -670,7 +737,7 @@ const COMMANDS: Record<string, CommandFn> = {
 
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
-    string: ["severity", "type", "url", "title", "content", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
+    string: ["severity", "type", "url", "title", "content", "parent", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
     boolean: ["sync", "version"],
     alias: { s: "severity", t: "type" },
   });
@@ -702,14 +769,15 @@ Commands:
   attach-doc <issue> --url U --title T --type Y
                                      Attach document (type: source-of-truth/issue-tracking/domain-knowledge)
   get <issue>                        Show issue details
-  push-doc <issue> <file.md> [--title T]
+  push-doc <issue> <file.md> [--title T] [--parent P]
                                      Upload markdown to Notion + link to issue
-  push-doc <issue> --title T --content "# md"
+  push-doc <issue> --title T --content "# md" [--parent P]
                                      Push content directly (for AI agents)
   update-doc <page-id> <file.md>     Replace Notion page content with markdown
   update-doc <page-id> --content "# md"
                                      Replace content directly
-  delete <issue> [issue2 ...]        Delete issue(s)
+  create-folder <name> [--parent P]  Create Notion folder (returns page ID for --parent)
+  delete <issue> [issue2 ...]        Delete issue(s) + linked Notion pages
   help                               Show this help
   --version                          Show version
 
