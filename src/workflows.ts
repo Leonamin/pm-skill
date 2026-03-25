@@ -763,6 +763,50 @@ async function selectProject(args: minimist.ParsedArgs): Promise<void> {
   }
 }
 
+async function selectPage(args: minimist.ParsedArgs): Promise<void> {
+  const { loadEnvFile, writeEnvFile } = await import("./env.js");
+  loadEnvFile();
+
+  const apiKey = process.env.NOTION_API_KEY;
+  if (!apiKey) {
+    throw new Error("NOTION_API_KEY must be set. Run 'npx pm-skill init' with --notion-key first.");
+  }
+
+  const client = getNotionClient(apiKey);
+  const pages = await searchPages(client, "");
+
+  if (pages.length === 0) {
+    console.log("No pages shared with this integration.");
+    console.log("Share a page in Notion: page menu → Connections → add your integration");
+    return;
+  }
+
+  const pageArg = args._[0] as string | undefined;
+
+  if (pageArg) {
+    const match = pages.find(
+      (p) => p.id === pageArg || p.title.toLowerCase() === pageArg.toLowerCase()
+    );
+    if (!match) {
+      console.log("Available pages:");
+      for (const p of pages) {
+        console.log(`  ${p.title} | ${p.id}`);
+      }
+      throw new Error(`Page '${pageArg}' not found.`);
+    }
+    writeEnvFile(process.cwd(), { NOTION_ROOT_PAGE_ID: match.id });
+    console.log(`✅ Selected page: "${match.title}" (${match.id})`);
+  } else {
+    const currentId = process.env.NOTION_ROOT_PAGE_ID;
+    console.log("Available pages:");
+    for (const p of pages) {
+      const marker = p.id === currentId ? " ← current" : "";
+      console.log(`  ${p.title} | ${p.id}${marker}`);
+    }
+    console.log(`\nUsage: npx pm-skill select-page "<name or id>"`);
+  }
+}
+
 // ── Command Registry ──
 
 const COMMANDS: Record<string, CommandFn> = {
@@ -809,6 +853,7 @@ Commands:
                                      Initialize project (validates keys, creates .env, config.yml, SKILL.md, AGENTS.md)
   setup [--sync]                     Verify config & label matching (--sync creates missing labels)
   select-project [name-or-id]        List or switch Linear project
+  select-page [name-or-id]           List or switch Notion root page
   start-feature <title>              Start feature (Linear issue + Notion PRD)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
   add-task <parent> <title>          Add sub-task to an issue
@@ -840,6 +885,10 @@ All config is per-project (CWD). Run 'npx pm-skill init' in each project.`);
   }
   if (command === "select-project") {
     await selectProject(args);
+    return;
+  }
+  if (command === "select-page") {
+    await selectPage(args);
     return;
   }
 
