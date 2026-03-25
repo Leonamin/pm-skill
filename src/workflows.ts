@@ -240,21 +240,26 @@ async function setup(
     console.log("\n✅ All config labels matched.");
   }
 
-  // 6. .env guide
-  console.log("\n📝 .env reference:");
-  console.log(`  LINEAR_API_KEY=<your key>`);
-  console.log(`  LINEAR_DEFAULT_TEAM_ID=${teamId}`);
-  if (ctx.env.LINEAR_DEFAULT_PROJECT_ID) {
-    console.log(
-      `  LINEAR_DEFAULT_PROJECT_ID=${ctx.env.LINEAR_DEFAULT_PROJECT_ID}`
-    );
+  // 6. Notion connection check
+  console.log("\n📓 Notion:");
+  if (ctx.env.NOTION_API_KEY) {
+    try {
+      const notionInfo = await validateNotionKey(ctx.env.NOTION_API_KEY);
+      console.log(`  ✅ Connected: ${notionInfo.name}`);
+      if (ctx.env.NOTION_ROOT_PAGE_ID) {
+        console.log(`  Root page: ${ctx.env.NOTION_ROOT_PAGE_ID}`);
+      } else {
+        console.log(`  ⚠️  NOTION_ROOT_PAGE_ID not set — page creation will be skipped`);
+      }
+      if (ctx.env.NOTION_BUG_DB_ID) {
+        console.log(`  Bug DB: ${ctx.env.NOTION_BUG_DB_ID}`);
+      }
+    } catch {
+      console.log("  ❌ Notion API key is invalid. Check https://www.notion.so/my-integrations");
+    }
   } else {
-    console.log(
-      "  LINEAR_DEFAULT_PROJECT_ID=<optional>"
-    );
-  }
-  if (!ctx.env.NOTION_API_KEY) {
-    console.log("  NOTION_API_KEY=<get from https://www.notion.so/my-integrations>");
+    console.log("  ⚠️  NOTION_API_KEY not set — Notion features disabled");
+    console.log("  Set it via: pm-skill init --notion-key <key> --global");
   }
 }
 
@@ -543,9 +548,17 @@ const COMMANDS: Record<string, CommandFn> = {
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
     string: ["severity", "type", "url", "title", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
-    boolean: ["global", "sync"],
+    boolean: ["global", "sync", "version"],
     alias: { s: "severity", t: "type" },
   });
+
+  // --version
+  if (args.version) {
+    const { readFileSync } = await import("fs");
+    const pkg = JSON.parse(readFileSync(resolve(PKG_ROOT, "package.json"), "utf-8"));
+    console.log(`pm-skill v${pkg.version}`);
+    return;
+  }
 
   const command = args._[0] as string;
   args._ = args._.slice(1); // command 제거, 나머지가 positional args
