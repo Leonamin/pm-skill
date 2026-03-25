@@ -1,0 +1,58 @@
+{
+  "name": "@anthropic-tools/pm-skill",
+  "version": "1.0.0",
+  "description": "Structured project management CLI — Linear + Notion integration for AI coding assistants (Claude Code, Codex)",
+  "type": "module",
+  "bin": {
+    "pm-skill": "./dist/workflows.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "npx tsx src/workflows.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "linear",
+    "notion",
+    "project-management",
+    "cli",
+    "claude-code",
+    "codex",
+    "ai-assistant",
+    "skill"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lsm/pm-skill.git"
+  },
+  "homepage": "https://github.com/lsm/pm-skill#readme",
+  "bugs": {
+    "url": "https://github.com/lsm/pm-skill/issues"
+  },
+  "files": [
+    "dist",
+    "config.yml",
+    ".env.example",
+    "SKILL.md",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@linear/sdk": "^80",
+    "@notionhq/client": "^5",
+    "js-yaml": "^4",
+    "minimist": "^1"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "tsx": "^4",
+    "@types/js-yaml": "^4",
+    "@types/minimist": "^1",
+    "@types/node": "^22"
+  }
+}

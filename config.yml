@@ -1,0 +1,82 @@
+labels:
+  - id: dev
+    name: Development
+    description: "코드 개발 작업 (새 기능, 기존 기능 변경)"
+    color: "#0088ff"
+  - id: design
+    name: Design
+    description: "UI/UX 디자인 관련 작업"
+    color: "#ff00ff"
+  - id: plan
+    name: Planning
+    description: "기획, 설계, 의사결정 문서 작업"
+    color: "#00cc88"
+  - id: bug
+    name: Bug
+    description: "버그 수정"
+    color: "#ff0000"
+  - id: refactor
+    name: Refactor
+    description: "기존 코드 리팩토링 (기능 변경 없음)"
+    color: "#888888"
+  - id: admin
+    name: Admin
+    description: "인프라, 배포, 환경 설정 등 관리 작업"
+    color: "#ffaa00"
+  - id: guest
+    name: Guest
+    description: "외부 의존성, 서드파티 연동 관련"
+    color: "#aa88ff"
+
+templates:
+  - id: feature
+    name: Feature PRD
+    description: "기능 개발용 PRD 템플릿"
+    notion_template: feature-prd
+    linear_labels: [dev]
+    linear_priority: p2
+  - id: bugfix
+    name: Bug Report
+    description: "버그 리포트 템플릿"
+    notion_template: bug-report
+    linear_labels: [bug]
+  - id: improvement
+    name: Improvement
+    description: "기존 기능 개선 템플릿"
+    notion_template: improvement
+    linear_labels: [dev]
+    linear_priority: p2
+  - id: refactor
+    name: Refactor
+    description: "리팩토링 템플릿"
+    notion_template: refactor
+    linear_labels: [refactor]
+    linear_priority: p3
+  - id: design
+    name: Design Doc
+    description: "설계 문서 템플릿"
+    notion_template: design-doc
+    linear_labels: [design, plan]
+    linear_priority: p2
+
+priorities:
+  p0: { linear: 1, name: "Urgent" }
+  p1: { linear: 2, name: "High" }
+  p2: { linear: 3, name: "Medium" }
+  p3: { linear: 4, name: "Low" }
+
+severity_mapping:
+  urgent: p0
+  high: p1
+  medium: p2
+  low: p3
+
+doc_types:
+  - id: source-of-truth
+    description: "진실의 원천 문서 — 프로젝트의 공식 기준이 되는 문서"
+  - id: issue-tracking
+    description: "장기 이슈 추적 문서 — 해결까지 시간이 걸리는 문제 기록"
+  - id: domain-knowledge
+    description: "도메인 지식 문서 — 프로젝트 도메인 관련 학습/참고 자료"
+
+epics: []
