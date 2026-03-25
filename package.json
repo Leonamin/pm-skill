@@ -1,5 +1,5 @@
 {
-  "name": "@anthropic-tools/pm-skill",
+  "name": "pm-skill",
   "version": "1.0.0",
   "description": "Structured project management CLI — Linear + Notion integration for AI coding assistants (Claude Code, Codex)",
   "type": "module",
@@ -10,7 +10,10 @@
     "build": "tsc",
     "start": "npx tsx src/workflows.ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release:patch": "npm version patch && npm publish && git push && git push --tags",
+    "release:minor": "npm version minor && npm publish && git push && git push --tags",
+    "release:major": "npm version major && npm publish && git push && git push --tags"
   },
   "keywords": [
     "linear",
@@ -25,11 +28,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lsm/pm-skill.git"
+    "url": "git+https://github.com/Leonamin/pm-skill.git"
   },
-  "homepage": "https://github.com/lsm/pm-skill#readme",
+  "homepage": "https://github.com/Leonamin/pm-skill#readme",
   "bugs": {
-    "url": "https://github.com/lsm/pm-skill/issues"
+    "url": "https://github.com/Leonamin/pm-skill/issues"
   },
   "files": [
     "dist",

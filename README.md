@@ -19,27 +19,27 @@ Structured project management CLI that integrates **Linear** and **Notion**. Des
 ### Option A: npm (recommended)
 
 ```bash
-npm install -g @anthropic-tools/pm-skill
+npm install -g pm-skill
 pm-skill help
 ```
 
 ### Option B: npx (no install)
 
 ```bash
-npx @anthropic-tools/pm-skill help
+npx pm-skill help
 ```
 
 ### Option C: Clone as Claude Code skill
 
 ```bash
-git clone https://github.com/lsm/pm-skill.git ~/.claude/skills/pm-skill
+git clone https://github.com/Leonamin/pm-skill.git ~/.claude/skills/pm-skill
 cd ~/.claude/skills/pm-skill && npm install
 ```
 
 ### Option D: Clone for Codex
 
 ```bash
-git clone https://github.com/lsm/pm-skill.git ~/pm-skill
+git clone https://github.com/Leonamin/pm-skill.git ~/pm-skill
 cd ~/pm-skill && npm install
 # Codex will read AGENTS.md for instructions
 ```
