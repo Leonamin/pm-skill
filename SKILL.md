@@ -3,6 +3,10 @@
 Linear + Notion integration for structured project management.
 "Design freedom, usage discipline" — only labels/templates/severity defined in `config.yml` are allowed.
 
+## Prerequisites
+
+Requires Node.js 18+. If `.env` does not exist in the project, run `init` first.
+
 ## Setup
 
 ```bash

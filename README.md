@@ -15,6 +15,12 @@ Structured project management CLI that integrates **Linear** and **Notion**. Des
 - **attach-doc** — Attach documents with type validation
 - **get** — View issue details with children, relations, and attachments
 
+## Prerequisites
+
+- **Node.js 18+** — check with `node --version`
+- **Linear API key** — Linear > Settings > API > Personal API Keys
+- **Notion API key** (optional) — https://www.notion.so/my-integrations
+
 ## Quick Start
 
 ```bash
@@ -121,6 +127,10 @@ npx pm-skill start-feature "My Feature"
 | `severity_mapping` | Severity name to priority key mapping |
 | `doc_types` | Document types for attach-doc validation |
 | `epics` | Epic definitions (project-specific) |
+
+## Security
+
+`.env` contains API keys — **never commit it to git**. The `init` command creates `.env` locally, and it's already in `.gitignore`.
 
 ## Per-Project Model
 
