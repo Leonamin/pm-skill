@@ -163,6 +163,27 @@ export async function createAttachment(
   });
 }
 
+// ── Label Creation ──
+
+export async function createLabel(
+  client: LinearClient,
+  teamId: string,
+  name: string,
+  opts?: { description?: string; color?: string }
+): Promise<{ id: string; name: string }> {
+  const payload = await client.createIssueLabel({
+    teamId,
+    name,
+    description: opts?.description,
+    color: opts?.color,
+  });
+  const label = await payload.issueLabel;
+  if (!label) {
+    throw new Error(`Failed to create label '${name}'.`);
+  }
+  return { id: label.id, name: label.name };
+}
+
 // ── Team / Labels / States ──
 
 export async function getTeams(client: LinearClient): Promise<Team[]> {

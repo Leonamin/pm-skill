@@ -22,6 +22,7 @@ import {
   getIssueDetail,
   createRelation,
   createAttachment,
+  createLabel,
   getTeams,
   getTeamStates,
   getTeamLabels,
@@ -171,52 +172,77 @@ async function init(args: minimist.ParsedArgs): Promise<void> {
 
 // ── Commands ──
 
-async function setup(ctx: CommandContext): Promise<void> {
-  console.log("=== PM Skill Setup ===\n");
+async function setup(
+  ctx: CommandContext,
+  args: minimist.ParsedArgs
+): Promise<void> {
+  const sync = !!args.sync;
+
+  console.log(`=== PM Skill Setup${sync ? " (--sync)" : ""} ===\n`);
 
   // 1. Teams
   const teams = await getTeams(ctx.linear);
-  console.log("📋 Linear 팀 목록:");
+  console.log("📋 Linear teams:");
   for (const team of teams) {
     const marker =
-      team.id === ctx.env.LINEAR_DEFAULT_TEAM_ID ? " ← 현재 설정" : "";
+      team.id === ctx.env.LINEAR_DEFAULT_TEAM_ID ? " ← current" : "";
     console.log(`  ${team.key} | ${team.name} | ${team.id}${marker}`);
   }
 
   // 2. States
   const teamId = ctx.env.LINEAR_DEFAULT_TEAM_ID;
-  console.log(`\n📊 팀 상태 목록 (${teamId}):`);
+  console.log(`\n📊 Workflow states (${teamId}):`);
   const states = await getTeamStates(ctx.linear, teamId);
   for (const state of states) {
     console.log(`  ${state.name} (${state.type}) | ${state.id}`);
   }
 
   // 3. Labels + matching
-  console.log("\n🏷️  Linear 라벨 목록:");
-  const teamLabels = await getTeamLabels(ctx.linear, teamId);
+  console.log("\n🏷️  Linear labels:");
+  let teamLabels = await getTeamLabels(ctx.linear, teamId);
   for (const label of teamLabels) {
     console.log(`  ${label.name} | ${label.id}`);
   }
 
-  // 4. Config label matching
-  console.log("\n🔗 Config ↔ Linear 라벨 매칭:");
+  // 4. Config label matching + sync
+  console.log("\n🔗 Config ↔ Linear label matching:");
   const linearLabelMap = new Map(
     teamLabels.map((l) => [l.name.toLowerCase(), l])
   );
+
+  const missingLabels = [];
   for (const configLabel of ctx.config.labels) {
     const match = linearLabelMap.get(configLabel.name.toLowerCase());
     if (match) {
       console.log(`  ✅ ${configLabel.id} (${configLabel.name}) → ${match.id}`);
     } else {
+      missingLabels.push(configLabel);
       console.log(
-        `  ⚠️  ${configLabel.id} (${configLabel.name}) → 매칭 없음! Linear에 '${configLabel.name}' 라벨을 생성하세요.`
+        `  ⚠️  ${configLabel.id} (${configLabel.name}) → not found in Linear`
       );
     }
   }
 
-  // 5. .env guide
-  console.log("\n📝 .env 설정 안내:");
-  console.log("  LINEAR_API_KEY=<위에서 사용 중인 키>");
+  // 5. Sync missing labels
+  if (missingLabels.length > 0 && sync) {
+    console.log(`\n🔄 Creating ${missingLabels.length} missing label(s) in Linear...`);
+    for (const configLabel of missingLabels) {
+      const created = await createLabel(ctx.linear, teamId, configLabel.name, {
+        description: configLabel.description,
+        color: configLabel.color,
+      });
+      console.log(`  ✅ Created: ${configLabel.name} → ${created.id}`);
+    }
+    console.log("\nLabels synced successfully.");
+  } else if (missingLabels.length > 0) {
+    console.log(`\n💡 ${missingLabels.length} label(s) missing. Run 'pm-skill setup --sync' to create them.`);
+  } else {
+    console.log("\n✅ All config labels matched.");
+  }
+
+  // 6. .env guide
+  console.log("\n📝 .env reference:");
+  console.log(`  LINEAR_API_KEY=<your key>`);
   console.log(`  LINEAR_DEFAULT_TEAM_ID=${teamId}`);
   if (ctx.env.LINEAR_DEFAULT_PROJECT_ID) {
     console.log(
@@ -224,10 +250,12 @@ async function setup(ctx: CommandContext): Promise<void> {
     );
   } else {
     console.log(
-      "  LINEAR_DEFAULT_PROJECT_ID=<Linear 프로젝트 ID (선택)>"
+      "  LINEAR_DEFAULT_PROJECT_ID=<optional>"
     );
   }
-  console.log("\nNotion 설정은 https://www.notion.so/my-integrations 에서 키를 발급하세요.");
+  if (!ctx.env.NOTION_API_KEY) {
+    console.log("  NOTION_API_KEY=<get from https://www.notion.so/my-integrations>");
+  }
 }
 
 async function startFeature(
@@ -500,7 +528,7 @@ async function get(
 // ── Command Registry ──
 
 const COMMANDS: Record<string, CommandFn> = {
-  setup: (ctx) => setup(ctx),
+  setup: (ctx, args) => setup(ctx, args),
   "start-feature": startFeature,
   "report-bug": reportBug,
   "add-task": addTask,
@@ -515,7 +543,7 @@ const COMMANDS: Record<string, CommandFn> = {
 async function main(): Promise<void> {
   const args = minimist(process.argv.slice(2), {
     string: ["severity", "type", "url", "title", "linear-key", "notion-key", "team-id", "project-id", "notion-page"],
-    boolean: ["global"],
+    boolean: ["global", "sync"],
     alias: { s: "severity", t: "type" },
   });
 
@@ -530,7 +558,7 @@ Usage: pm-skill <command> [args] [flags]
 Commands:
   init --linear-key K [--notion-key K] [--global]
                                      Initialize config & validate API keys
-  setup                              Verify Linear/Notion connection & show config
+  setup [--sync]                     Verify config & label matching (--sync creates missing labels)
   start-feature <title>              Start feature (Linear issue + Notion PRD)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
   add-task <parent> <title>          Add sub-task to an issue
