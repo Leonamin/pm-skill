@@ -1,6 +1,6 @@
 {
   "name": "pm-skill",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Structured project management CLI — Linear + Notion integration for AI coding assistants (Claude Code, Codex)",
   "type": "module",
   "bin": {
