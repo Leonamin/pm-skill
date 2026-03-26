@@ -19,15 +19,6 @@ labels:
     name: Refactor
     description: "기존 코드 리팩토링 (기능 변경 없음)"
     color: "#888888"
-  - id: admin
-    name: Admin
-    description: "인프라, 배포, 환경 설정 등 관리 작업"
-    color: "#ffaa00"
-  - id: guest
-    name: Guest
-    description: "외부 의존성, 서드파티 연동 관련"
-    color: "#aa88ff"
-
 templates:
   - id: feature
     name: Feature

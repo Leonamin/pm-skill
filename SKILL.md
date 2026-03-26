@@ -1,7 +1,19 @@
+---
+name: pm-skill
+description: Structured project management CLI — Linear + Notion integration. Trigger on: pm-skill, Linear issue, Notion doc, start-feature, report-bug, push-doc, backlog
+---
+
 # PM Skill — Structured Project Management
 
 Linear + Notion integration for structured project management.
 "Design freedom, usage discipline" — only labels/templates/severity defined in `config.yml` are allowed.
+
+## Rules
+
+- When the user mentions **pm-skill**, **Linear issue**, **Notion document**, **start-feature**, **report-bug**, **backlog**, or **push-doc**, use this skill.
+- If the user writes `/pm-skill <args>`, execute `npx pm-skill <args>` from the project root.
+- This skill requires **shell execution** and **network access** (Linear/Notion APIs).
+- If `.env` does not exist, run `npx pm-skill init` first.
 
 ## Prerequisites
 
@@ -18,6 +30,9 @@ npx pm-skill setup
 
 # Create missing labels in Linear
 npx pm-skill setup --sync
+
+# Install as Codex global skill (optional)
+npx pm-skill install-codex-skill
 ```
 
 ## Commands
@@ -28,8 +43,15 @@ Verify Linear/Notion connection + label matching. `--sync` creates missing label
 npx pm-skill setup
 ```
 
+### select-project / select-page
+Switch active Linear project or Notion root page.
+```bash
+npx pm-skill select-project "Project Name"
+npx pm-skill select-page "Page Name"
+```
+
 ### start-feature
-Start feature development. Creates Linear issue + Notion PRD + bidirectional links.
+Start feature development. Creates Linear issue with task checklist.
 ```bash
 npx pm-skill start-feature "Feature title"
 ```
@@ -47,20 +69,41 @@ Add sub-task to an issue.
 npx pm-skill add-task ENG-10 "Write unit tests"
 ```
 
-### relate
-Link two issues. (related, similar)
+### relate / block
+Link or set blocking relationship between issues.
 ```bash
 npx pm-skill relate ENG-10 ENG-11 --type related
-```
-
-### block
-Set blocking relationship. (ENG-10 must complete before ENG-11)
-```bash
 npx pm-skill block ENG-10 ENG-11
 ```
 
+### push-doc
+Upload markdown to Notion. Optionally link to a Linear issue.
+```bash
+# From file
+npx pm-skill push-doc ./design.md --title "Design Doc" --issue ENG-10
+
+# From content (AI agent use case)
+npx pm-skill push-doc --title "Report" --content "# Results..." --issue ENG-10
+
+# Under a specific parent page
+npx pm-skill push-doc ./schema.md --parent <page-id>
+```
+
+### update-doc
+Replace existing Notion page content with new markdown.
+```bash
+npx pm-skill update-doc <page-id> ./updated.md
+npx pm-skill update-doc <page-id> --content "# Updated..."
+```
+
+### create-folder
+Create Notion page as a category/folder.
+```bash
+npx pm-skill create-folder "Schema Docs" --parent <page-id>
+```
+
 ### attach-doc
-Attach document URL to issue. Type is validated against config.
+Attach a document URL to an issue with type validation.
 ```bash
 npx pm-skill attach-doc ENG-10 \
   --url "https://notion.so/..." \
@@ -75,6 +118,13 @@ Show issue details including sub-issues, relations, and attachments.
 npx pm-skill get ENG-10
 ```
 
+### delete
+Delete issue(s) and linked Notion pages.
+```bash
+npx pm-skill delete ENG-10
+npx pm-skill delete ENG-10 --recursive   # also delete sub-issues
+```
+
 ## Workflow Examples
 
 ### Feature Development
@@ -82,9 +132,8 @@ npx pm-skill get ENG-10
 npx pm-skill start-feature "Booking cancellation"
 npx pm-skill add-task ENG-10 "API endpoint"
 npx pm-skill add-task ENG-10 "Frontend UI"
-npx pm-skill add-task ENG-10 "Tests"
+npx pm-skill push-doc ./design.md --issue ENG-10
 npx pm-skill relate ENG-10 ENG-8 --type related
-npx pm-skill block ENG-10 ENG-15
 ```
 
 ### Bug Fix
@@ -94,13 +143,9 @@ npx pm-skill add-task ENG-20 "Root cause analysis"
 npx pm-skill add-task ENG-20 "Fix and test"
 ```
 
-## Config
-
-| Section | Description |
-|---------|-------------|
-| `labels` | Available labels (description required) |
-| `templates` | Command → label/priority/Notion template mappings |
-| `priorities` | p0-p3 → Linear priority mapping |
-| `severity_mapping` | severity name → priority key |
-| `doc_types` | Document types for attach-doc |
-| `epics` | Epic definitions |
+### Document Management
+```bash
+npx pm-skill create-folder "Schema Docs"
+npx pm-skill push-doc ./schema.md --parent <folder-id>
+npx pm-skill update-doc <page-id> ./schema-v2.md
+```

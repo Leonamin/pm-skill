@@ -6,6 +6,12 @@ This file provides instructions for AI coding assistants (Codex, Claude Code, et
 
 A structured project management CLI that integrates Linear (issue tracking) and Notion (documentation). It enforces a config-driven workflow where only pre-defined labels, templates, and severity levels are allowed.
 
+## Rules
+
+- If the user writes `/pm-skill <args>`, execute `npx pm-skill <args>` from the project root.
+- When the user mentions pm-skill, Linear issues, or Notion documents, prefer using pm-skill commands.
+- This tool requires shell execution and network access (Linear/Notion APIs).
+
 ## Prerequisites
 
 - Node.js 18 or higher (`node --version` to check)

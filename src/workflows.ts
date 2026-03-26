@@ -817,6 +817,16 @@ async function selectPage(args: minimist.ParsedArgs): Promise<void> {
   }
 }
 
+async function installCodexSkill(): Promise<void> {
+  const { homedir } = await import("os");
+  const targetDir = resolve(homedir(), ".codex", "skills", "pm-skill");
+  const targetPath = resolve(targetDir, "SKILL.md");
+
+  copyBundledFile("SKILL.md", targetPath);
+  console.log(`\n✅ Codex skill installed: ${targetPath}`);
+  console.log(`   Restart Codex to pick up the new skill.`);
+}
+
 // ── Command Registry ──
 
 const COMMANDS: Record<string, CommandFn> = {
@@ -864,6 +874,7 @@ Commands:
   setup [--sync]                     Verify config & label matching (--sync creates missing labels)
   select-project [name-or-id]        List or switch Linear project
   select-page [name-or-id]           List or switch Notion root page
+  install-codex-skill                Install skill to ~/.codex/skills/ for Codex
   start-feature <title>              Start feature (Linear issue with task checklist)
   report-bug <title> [--severity S]  File bug report (severity: urgent/high/medium/low)
   add-task <parent> <title>          Add sub-task to an issue
@@ -900,6 +911,10 @@ All config is per-project (CWD). Run 'npx pm-skill init' in each project.`);
   }
   if (command === "select-page") {
     await selectPage(args);
+    return;
+  }
+  if (command === "install-codex-skill") {
+    await installCodexSkill();
     return;
   }
 
